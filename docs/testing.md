@@ -6,13 +6,13 @@
 
 `@ep-connectors/testing`は、[全体設計の3](architecture.md#3-共通の差し口)の差し口ごとに契約試験を持つ。試験は実装を受け取る関数としてexportし、メモリ実装もHostの本番実装も同じ試験を通す。
 
-| 差し口            | 契約試験で確かめること                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `TokenStore`      | 目録にない操作名・method・origin・pathを送らない。Adapterが`Authorization`・`Cookie`などを指定した要求を拒否する。認証付き要求が別originへredirectされても辿らず、redirect先へtokenを送らない（偽のProviderで送信先の受信を数えて確かめる）。cursor・nextLinkのURLも目録で検査する。応答・error・logにtoken、送信header、`Set-Cookie`が含まれない。同時refreshが一つにまとまる。`revoke`後は`send`が失敗し、同期の基点も無効になる                 |
-| `OperationLedger` | 同じslotへの同時`claim`で`claimed`は一つだけ。同じoperationで違うdigestは`conflict`。別々のworkerへ同じstepを同時に配送すると、`acquireStep`で送信権を得るのは一つだけで、外部への送信は一回になる。古いfencing tokenでの`appendAttempt` / `recordResult`を拒否する。`dispatching`のまま再起動すると`listUnresolved`に残り、`acquireReconcile`の後は元のworkerの記録が拒否され、証拠なしの`release`も拒否され、未送信として再送されない            |
-| `JobQueue`        | 同じjobの二重実行で外部への送信が一回になる（台帳と組み合わせて確かめる）。`step`・`read`・`subscription`のそれぞれで、実行の直前に`authorizeDispatch`が呼ばれ、失効・tenantの切替・connectionの世代の変化があれば実行されない。読取のjobが二重に実行されても、公開されるのは一つの世代だけで、古い世代が新しい世代を上書きしない                                                                                                                  |
-| `WebhookIntake`   | 署名・tokenの不一致を拒否する。通知の本文を変更内容として返さない                                                                                                                                                                                                                                                                                                                                                                                  |
-| `SyncStateStore`  | 条件の違う基点を返さない。Baselineを失うと基点も無効になる。ページの適用中、commitの直前、commitの直後のそれぞれで再起動しても、読む側はcacheと基点が同じ世代のものだけを見る。再起動後は公開済みの世代から再開し、取りこぼし（偽のProviderに置いた変更が最終的にcacheへ現れること）がない。期待した世代と違う`commit`を拒否する。非atomicな保管の手順では、cacheの書込み中、印の書き換えの直前・直後で止めても、印が指す組と実際のcacheが一致する |
+| 差し口            | 契約試験で確かめること                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `TokenStore`      | 目録にない操作名・method・origin・pathを送らない。目録の`resources`から取り出した資源が`authorizeResources`で拒否される要求を送らない。Adapterが`Authorization`・`Cookie`などを指定した要求を拒否する。認証付き要求が別originへredirectされても辿らず、redirect先へtokenを送らない（偽のProviderで送信先の受信を数えて確かめる）。cursor・nextLinkのURLも目録で検査する。応答・error・logにtoken、送信header、`Set-Cookie`が含まれない。同時refreshが一つにまとまる。`revoke`後は`send`が失敗し、同期の基点も無効になる |
+| `OperationLedger` | 同じslotへの同時`claim`で`claimed`は一つだけ。同じoperationで違うdigestは`conflict`。別々のworkerへ同じstepを同時に配送すると、`acquireStep`で送信権を得るのは一つだけで、外部への送信は一回になる。古いfencing tokenでの`appendAttempt` / `recordResult`を拒否する。`dispatching`のまま再起動すると`listUnresolved`に残り、`acquireReconcile`の後は元のworkerの記録が拒否され、証拠なしの`release`も拒否され、未送信として再送されない                                                                                 |
+| `JobQueue`        | 同じjobの二重実行で外部への送信が一回になる（台帳と組み合わせて確かめる）。`step`・`read`・`subscription`のそれぞれで、実行の直前に`authorizeDispatch`が呼ばれ、失効・tenantの切替・connectionの世代の変化があれば実行されない。読取のjobが二重に実行されても、公開されるのは一つの世代だけで、古い世代が新しい世代を上書きしない                                                                                                                                                                                       |
+| `WebhookIntake`   | 署名・tokenの不一致を拒否する。通知の本文を変更内容として返さない                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `SyncStateStore`  | 条件の違う基点を返さない。Baselineを失うと基点も無効になる。ページの適用中、commitの直前、commitの直後のそれぞれで再起動しても、読む側はcacheと基点が同じ世代のものだけを見る。再起動後は公開済みの世代から再開し、取りこぼし（偽のProviderに置いた変更が最終的にcacheへ現れること）がない。期待した世代と違う`commit`を拒否する。非atomicな保管の手順では、cacheの書込み中、印の書き換えの直前・直後で止めても、印が指す組と実際のcacheが一致する                                                                      |
 
 契約試験は差し口の呼出しの単位で再起動を再現する（ページの適用中、commitの直前・直後）。一つの呼出しの内側で止まる場合（非atomicな保管でcacheの書込み中、印の書き換えの直前・直後）は、Hostの保管ごとに作りが違うため、Hostが自分の実装の故障注入で確かめる。
 
@@ -30,11 +30,14 @@
 - Microsoftの`@removed`を元の予定の削除として扱わない。
 - 各stepと各retryの直前に権限を再確認し、失効していたら未送信のstepを止める。
 
-GitHubでは次を試験する（[GitHub接続の設計](github/README.md)）。
+GitHubでは次を試験する（[GitHub接続の設計](github/README.md)、`packages/github/src/*.test.ts`）。
 
 - `operationName`が目録と同じでもdocumentが違う要求（fieldやaliasの追加、別のリポジトリ）を拒否する。変数のowner / repository IDが認可の範囲外なら送らない。
 - 同じinstallationの中で、認可されていないrepositoryの内容を、要求・再取得・cacheからの表示のどれでも返さない。対応表から外したrepositoryの写しは表示されなくなる。
 - Webhookの再配送を配送IDで一度だけ扱い、古い通知で新しい状態を上書きしない。
+- ETagの照会が304なら GraphQLを送らない。差分の読取は基点より古いitemで止まり、削除・移動は定期的な全件の照合で反映する。
+- Rate limitでページの途中まで取れなかった場合は何も公開せず、前の写しを残し、`JobQueue`へ待機の時刻を渡す。
+- 同じ`read` jobの二重の配送で、公開される世代は一つだけになる。
 
 シナリオIDはEditorPlatformの[検証計画](https://github.com/ryo0221/editor-platform/blob/main/docs/schedule/verification-plan.md#観測層の割当)と共通にし、「接続」列の観測をここで証明する。本リポジトリで新しいIDを作らない。
 

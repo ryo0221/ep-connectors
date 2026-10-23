@@ -2,7 +2,7 @@
 
 EditorPlatform を使う Host（PaoBub 製品版、EditorPlatform を組み込む利用者のアプリ）が外部サービスへ接続するためのライブラリ群。カレンダー・会議、DB・表計算、地図、GitHub、ファイルの保存先を扱う。
 
-**状態：C0 の実装中。** `@ep-connectors/core`（差し口の型と目録の検査）と `@ep-connectors/testing`（メモリ実装、偽の Provider、契約試験）がある。Provider の adapter はまだない。
+**状態：C0 の実装中、R1 の GitHub 読取を実装。** `@ep-connectors/core`（差し口の型と目録の検査）、`@ep-connectors/testing`（メモリ実装、偽の Provider、契約試験）、`@ep-connectors/github`（Issue / Pull Request の一覧の読取。偽の GitHub でだけ試験済み）がある。
 
 ## 開発
 
@@ -17,6 +17,7 @@ npm run check   # prettier、eslint、tsc、vitest
 | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [`@ep-connectors/core`](packages/core/src)       | `ConnectionKey`、`HostPolicy`、`TokenStore` / `HttpTransport`、`OperationLedger`、`JobQueue`、`WebhookIntake`、`SyncStateStore`、能力の宣言の型と、操作の目録の検査 |
 | [`@ep-connectors/testing`](packages/testing/src) | 各差し口のメモリ実装（試験専用）、偽の Provider、Host の実装にも流せる契約試験（`@ep-connectors/testing/contracts`）                                                |
+| [`@ep-connectors/github`](packages/github/src)   | GitHub の Issue / Pull Request の一覧の読取（固定の GraphQL document、repository 単位の認可、ETag による変化の照会）、webhook の検証                                |
 
 Host が自分の差し口の実装を確かめるときは、`@ep-connectors/testing/contracts` の `tokenStoreContract` などに実装を渡して vitest で流す。例は [memory.contract.test.ts](packages/testing/src/memory.contract.test.ts)。
 
