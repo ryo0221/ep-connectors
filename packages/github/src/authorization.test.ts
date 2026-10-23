@@ -147,6 +147,26 @@ describe('repository authorization inside one installation', () => {
     expect(await sync().read(scope)).toBeNull();
   });
 
+  it('checks by node ID and invalidates the copy when the probe is denied', async () => {
+    const { deps, connection, github, sync, read, clock } = await arrange();
+    const scope = workItemsScope(connection, 'R_a');
+    await syncWorkItems(deps(), scope);
+    // GitHub 側で権限を失った。Host の対応表には残っている。
+    github.repositories.delete('R_a');
+    github.failNext('probe', {
+      status: 403,
+      headers: {},
+      body: '{"message":"Resource not accessible by integration"}',
+    });
+    clock.advance(60_000);
+    expect(await syncWorkItems(deps(), scope)).toEqual({
+      kind: 'unavailable',
+      reason: 'not-found',
+    });
+    expect(await sync().read(scope)).toBeNull();
+    expect(await read('R_a')).toEqual({ ok: false, reason: 'not-synced' });
+  });
+
   it('keeps the installation token out of everything it returns', async () => {
     const { deps, connection, read } = await arrange();
     const outcome = await syncWorkItems(deps(), workItemsScope(connection, 'R_a'));

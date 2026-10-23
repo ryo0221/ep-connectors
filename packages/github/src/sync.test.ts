@@ -251,6 +251,21 @@ describe('incomplete reads', () => {
     expect(queueBacking.jobs[0]).toMatchObject({ status: 'pending', notBefore: RESET });
   });
 
+  it('refreshes an expired installation token once and reads again', async () => {
+    const { deps, scope, github, refresh } = await arrange();
+    github.failNext('graphql', { status: 401, headers: {}, body: '{"message":"Bad credentials"}' });
+    expect(await syncWorkItems(deps(), scope)).toMatchObject({ kind: 'published', fetched: 4 });
+    expect(refresh.calls).toBe(1);
+    expect(github.graphqlCalls().at(-1)?.headers.authorization).toMatch(/-1$/);
+  });
+
+  it('stops as revoked when the refresh after a 401 is refused', async () => {
+    const { deps, scope, github, refresh } = await arrange();
+    refresh.outcome = 'revoked';
+    github.failNext('graphql', { status: 401, headers: {}, body: '{"message":"Bad credentials"}' });
+    expect(await syncWorkItems(deps(), scope)).toEqual({ kind: 'unavailable', reason: 'revoked' });
+  });
+
   it('waits a minute on a secondary rate limit without Retry-After', async () => {
     const { deps, scope, github } = await arrange();
     github.failNext('graphql', {

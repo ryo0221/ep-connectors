@@ -1,9 +1,11 @@
 import type {
   Clock,
+  HttpRequest,
   HttpResponse,
   JobHandler,
   PublishedSync,
   SendError,
+  SendResult,
   SyncScope,
   SyncStateStore,
   TokenStore,
@@ -187,7 +189,7 @@ async function probeChanges(
     direction: 'desc',
     per_page: '1',
   }).toString();
-  const result = await deps.tokens.send(scope.connection, {
+  const result = await sendRefreshing(deps, scope, {
     operation: OPERATIONS.probe,
     method: 'GET',
     url: url.href,
@@ -205,8 +207,34 @@ async function probeChanges(
   const response = result.response;
   if (response.status === 304) return { kind: 'unchanged' };
   if (response.status === 200) return { kind: 'changed', etag: response.headers.etag ?? null };
+  // 403 も、権限を失ったのかを node ID での読取で確かめる。読めなければそこで写しを無効にする。
   if ([301, 302, 307, 308, 404, 410].includes(response.status)) return { kind: 'moved' };
+  if (response.status === 403 && !rateLimitTime(response, deps.clock)) return { kind: 'moved' };
   return { kind: 'outcome', outcome: httpFailure(response, deps.clock, retryDelayMs) };
+}
+
+/**
+ * 401 なら一度だけ refresh して送り直す。Installation token は短時間で失効するため、401 を失効と
+ * 決めつけない。Refresh が `revoked` なら接続の失効、通信の失敗なら送信前の失敗として返す。
+ */
+async function sendRefreshing(
+  deps: GithubReadDeps,
+  scope: SyncScope,
+  request: HttpRequest,
+): Promise<SendResult> {
+  const first = await deps.tokens.send(scope.connection, request);
+  if (!first.ok || first.response.status !== 401) return first;
+  const refreshed = await deps.tokens.refresh(scope.connection);
+  if (!refreshed.ok) {
+    return {
+      ok: false,
+      error:
+        refreshed.reason === 'revoked'
+          ? { kind: 'revoked' }
+          : { kind: 'transport', phase: 'before-send' },
+    };
+  }
+  return deps.tokens.send(scope.connection, request);
 }
 
 type Page =
@@ -230,7 +258,7 @@ async function fetchPage(
   options: typeof DEFAULTS,
 ): Promise<Page> {
   const issue = kind === 'issue';
-  const result = await deps.tokens.send(scope.connection, {
+  const result = await sendRefreshing(deps, scope, {
     operation: issue ? OPERATIONS.issues : OPERATIONS.pullRequests,
     method: 'POST',
     url: `${GITHUB_API}/graphql`,

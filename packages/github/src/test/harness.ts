@@ -71,6 +71,7 @@ export async function githubHarness(options: GithubReadOptions = {}) {
   const queueBacking = createQueueBacking();
   const clock = new FixedClock('2026-10-23T00:00:00.000Z');
   const catalog = await createGithubCatalog();
+  const refresh = { outcome: 'ok' as 'ok' | 'revoked', calls: 0 };
 
   // 呼ぶたびに新しい instance を作り、保管だけを共有する。
   const tokens = () =>
@@ -79,7 +80,12 @@ export async function githubHarness(options: GithubReadOptions = {}) {
       catalogs: [catalog],
       transport: github.provider.transport,
       policy,
-      refresher: async () => 'revoked',
+      refresher: async () => {
+        refresh.calls += 1;
+        return refresh.outcome === 'ok'
+          ? { accessToken: `${ACCESS_TOKEN}-${refresh.calls}` }
+          : 'revoked';
+      },
       syncState: new MemorySyncStateStore(syncBacking),
     });
   const sync = () => new MemorySyncStateStore(syncBacking);
@@ -98,6 +104,7 @@ export async function githubHarness(options: GithubReadOptions = {}) {
     syncBacking,
     queueBacking,
     queue: () => new MemoryJobQueue(queueBacking),
+    refresh,
     authorize(id: string, nameWithOwner: string) {
       authorized.set(id, nameWithOwner);
     },
