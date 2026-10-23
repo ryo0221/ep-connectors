@@ -1,0 +1,41 @@
+{
+  "repository": "https://github.com/ryo0221/editor-platform",
+  "commit": "67026604cfe22f35538d8f193b2f313609cdf8c6",
+  "copiedOn": "2026-10-23",
+  "contract": "docs/schedule/editor-host-contract.md",
+  "copies": [
+    {
+      "target": "src/schedule/port.ts",
+      "sources": [
+        {
+          "path": "packages/schedule/src/zone.ts",
+          "lastChanged": "f1b40803d537e103701aeab47bffe6b77af1e174",
+          "symbols": ["Fold", "LocalDateTime"]
+        },
+        {
+          "path": "packages/schedule/src/model.ts",
+          "lastChanged": "f1b40803d537e103701aeab47bffe6b77af1e174",
+          "symbols": ["conferences", "ConferencePreference", "TimedTime", "AllDayTime", "EventTime"]
+        },
+        {
+          "path": "packages/schedule/src/host.ts",
+          "lastChanged": "473a230b0c6e263a1e3cd7c1ea8be9c7441ef1d2",
+          "symbols": [
+            "ScheduleSourceInfo",
+            "OverlayEvent",
+            "OverlayRange",
+            "OverlayRead",
+            "OverlayNotice",
+            "ScheduleReadPort",
+            "EffectIntent",
+            "PreparedPlan",
+            "StepState",
+            "OperationStep",
+            "OperationStatus",
+            "ScheduleEffectPort"
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -22,4 +22,28 @@ export default tseslint.config(
       'no-restricted-globals': ['error', 'fetch', 'setTimeout', 'setInterval'],
     },
   },
+  {
+    files: ['packages/editor-ports/src/**/*.ts'],
+    ignores: ['packages/editor-ports/src/**/*.test.ts'],
+    rules: {
+      // 固定した port 契約は型と純粋な検査だけ。Adapter が依存しても実行時に何も持ち込まない。
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['node:*', 'fs', 'http', 'https', 'net'],
+              message: 'Port contracts do no I/O.',
+            },
+            { group: ['@ep-connectors/*'], message: 'Port contracts depend on no other package.' },
+          ],
+        },
+      ],
+      'no-restricted-globals': ['error', 'fetch', 'setTimeout', 'setInterval'],
+    },
+  },
+  {
+    files: ['packages/*/scripts/**/*.mjs'],
+    languageOptions: { globals: { process: 'readonly', console: 'readonly' } },
+  },
 );
