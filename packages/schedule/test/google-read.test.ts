@@ -26,6 +26,7 @@ import {
   googleCalendarReadJobHandler,
   googleCalendarScope,
   readGoogleCalendarRange,
+  readJob,
   syncGoogleCalendar,
   syncGoogleCalendarNow,
 } from '../src/google/index.js';
@@ -385,6 +386,39 @@ describe('Google Calendar read over the shared ports', () => {
     expect(state?.staging.size).toBe(1);
   });
 
+  it('skips a late redelivery once a read started after the request is published', async () => {
+    const t = setup();
+    t.google.put(CALENDAR, timed('a', 3));
+    const job = readJob(t.scope, null, t.clock.now());
+    t.clock.advance(1_000);
+    const handler = googleCalendarReadJobHandler(t.deps());
+    expect(await handler(job)).toEqual({ kind: 'done' });
+    const requests = t.google.listRequests.length;
+    const published = await t.deps().sync.read(t.scope);
+
+    // 一度目の反映のあとに同じ job がもう一度届いても、取りに行かず、世代も進めない。
+    t.clock.advance(60_000);
+    expect(await googleCalendarReadJobHandler(t.deps())(job)).toEqual({ kind: 'done' });
+    expect(t.google.listRequests).toHaveLength(requests);
+    expect(await t.deps().sync.read(t.scope)).toEqual(published);
+  });
+
+  it('still reads when the published read started before the request', async () => {
+    const t = setup();
+    t.google.put(CALENDAR, timed('a', 3));
+    await syncGoogleCalendar(t.deps(), t.scope);
+    // 公開済みの取得が始まったあとに変更があり、その合図が届いた。
+    t.google.put(CALENDAR, timed('b', 4));
+    t.clock.advance(1);
+    const published = await t.deps().sync.read(t.scope);
+    expect(
+      await googleCalendarReadJobHandler(t.deps())(
+        readJob(t.scope, published?.generation ?? null, t.clock.now()),
+      ),
+    ).toEqual({ kind: 'done' });
+    expect(titles(await t.read())).toEqual(['a', 'b']);
+  });
+
   it('turns a verified webhook signal into a re-read, never into the change itself', async () => {
     const t = setup();
     t.google.put(CALENDAR, timed('a', 3));
@@ -398,10 +432,15 @@ describe('Google Calendar read over the shared ports', () => {
     const intake = new MemoryWebhookIntake(createWebhookBacking([subscription]));
 
     t.google.put(CALENDAR, timed('b', 4));
+    t.clock.advance(1_000);
     // 本文に何が書かれていても、変更内容としては使わない。
-    const verified = await intake.verify(
-      await fakeWebhook(subscription, '{"items":[{"id":"evil"}]}', 'message-1'),
+    const inbound = await fakeWebhook(
+      subscription,
+      '{"items":[{"id":"evil"}]}',
+      'message-1',
+      t.clock.now(),
     );
+    const verified = await intake.verify(inbound);
     if (!verified.ok) throw new Error('verify failed');
     const other = googleCalendarScope({
       connection: t.connection,
@@ -409,7 +448,13 @@ describe('Google Calendar read over the shared ports', () => {
       window: WINDOW,
     });
     expect(
-      await enqueueReadsForSignal(t.deps().queue, t.deps().sync, verified.signal, [t.scope, other]),
+      await enqueueReadsForSignal(
+        t.deps().queue,
+        t.deps().sync,
+        verified.signal,
+        [t.scope, other],
+        inbound.receivedAt,
+      ),
     ).toBe(1);
     await t.runJobs();
     expect(titles(await t.read())).toEqual(['a', 'b']);

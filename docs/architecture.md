@@ -98,7 +98,7 @@ Raw token、authorization header、refresh tokenを、Editor向けDTO、操作�
 
 - `enqueue(job, notBefore)`で、serializeできるjobの参照を預ける。参照は種類ごとに次のどれかで、payloadの写しを持たない。実行するときに、送る内容や取得の条件を保管から読み直す。
   - `{ kind: 'step', operation, step }`：外部作用のstep。計画は台帳から読む（W1以降）。
-  - `{ kind: 'read', scope, expectedGeneration }`（scopeはConnectionKeyと対象を含む）：rate limitや一時障害の後の再取得、Webhookの合図を受けた再取得、定期的な照合。取得の条件と基点は`SyncStateStore`から読む。台帳を使わず、読取の段階から使える。
+  - `{ kind: 'read', scope, expectedGeneration, requestedAt? }`（scopeはConnectionKeyと対象を含む）：rate limitや一時障害の後の再取得、Webhookの合図を受けた再取得、定期的な照合。取得の条件と基点は`SyncStateStore`から読む。台帳を使わず、読取の段階から使える。`requestedAt`は取り直しが要ると分かった時刻（Webhookの受信、失敗した取得）である。
   - `{ kind: 'subscription', connection, subscription }`：Webhookの購読の作成・更新・停止。
 - Jobを実行する直前に、jobの種類ごとの条件を`HostPolicy.authorizeDispatch(job)`で再確認する。キューに入れた時点の判定を使い回さない。失効・tenantの切替・connectionの世代の変化を検知したら、そのjobを実行せずに終える。
 
@@ -108,7 +108,7 @@ Raw token、authorization header、refresh tokenを、Editor向けDTO、操作�
   | `read`         | scopeのprincipal・connection・対象への閲覧の認可（GitHubでは[repository単位の認可](github/README.md#21-installationの権限と利用者の閲覧権限)）、期待する世代 |
   | `subscription` | 購読の所有者（どのconnectionの購読か）と、connectionが有効であること                                                                                         |
 
-- 同じjobが二度実行されても安全にする。外部作用のstepの重複実行は台帳の`acquireStep`とfencing tokenで抑止し、キューの「一回だけ配送する」保証に頼らない。読取のjobは、`SyncStateStore.commit`の世代のCASで、古い世代や二重の取得が公開されないようにする。
+- 同じjobが二度実行されても安全にする。外部作用のstepの重複実行は台帳の`acquireStep`とfencing tokenで抑止し、キューの「一回だけ配送する」保証に頼らない。読取のjobは、`SyncStateStore.commit`の世代のCASで、古い世代や二重の取得が公開されないようにする。`requestedAt`よりあとに始めた取得がすでに公開されていれば、遅れて届いた配送は取りに行かずに終える。`expectedGeneration`だけでは、合図の後に先に公開された取得が合図の変更を含むかを判断できないため、世代の比較だけでjobを捨てない。
 - SDK、HTTP client、proxyによる暗黙のretryは無効にし、retryはこの差し口だけで行う。
 
 ### 3.5 `WebhookIntake`

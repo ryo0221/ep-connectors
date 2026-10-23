@@ -61,6 +61,7 @@ export function isGoogleCalendarScope(scope: SyncScope): boolean {
 interface GoogleSyncBasis {
   v: 1;
   syncToken: string;
+  /** 最初のページを送る直前の時刻。公開した内容は、少なくともこの時刻までの変更を含む。 */
   fetchedAt: string;
 }
 
@@ -156,6 +157,7 @@ async function syncOnce(
     basis = null;
   }
   const mode = basis ? 'incremental' : 'full';
+  const startedAt = deps.clock.now();
   const staged = await deps.sync.stage(scope, expected);
   if (!staged.ok) return { kind: 'superseded' };
 
@@ -183,7 +185,7 @@ async function syncOnce(
     const next: GoogleSyncBasis = {
       v: 1,
       syncToken: page.nextSyncToken,
-      fetchedAt: deps.clock.now(),
+      fetchedAt: startedAt,
     };
     const committed = await deps.sync.commit(
       scope,
@@ -316,26 +318,37 @@ export async function syncGoogleCalendarNow(
   const outcome = await syncGoogleCalendar(deps, scope);
   if (outcome.kind === 'deferred') {
     const published = await deps.sync.read(scope);
-    await deps.queue.enqueue(readJob(scope, published?.generation ?? null), {
+    await deps.queue.enqueue(readJob(scope, published?.generation ?? null, deps.clock.now()), {
       notBefore: outcome.notBefore,
     });
   }
   return outcome;
 }
 
-export function readJob(scope: SyncScope, expectedGeneration: number | null): JobRef {
-  return { kind: 'read', scope, expectedGeneration };
+export function readJob(
+  scope: SyncScope,
+  expectedGeneration: number | null,
+  requestedAt: string,
+): JobRef {
+  return { kind: 'read', scope, expectedGeneration, requestedAt };
 }
 
 /**
  * Host のキューが呼ぶ handler。Google Calendar の `read` job だけを扱う。Host は呼ぶ直前に
- * `HostPolicy.authorizeDispatch` で確かめる（`JobQueue` の契約）。同じ job が二度配送されても、
- * 世代の CAS により公開されるのは一つだけである。
+ * `HostPolicy.authorizeDispatch` で確かめる（`JobQueue` の契約）。同時に二度配送されても、世代の
+ * CAS により公開されるのは一つだけである。`requestedAt` よりあとに始めた取得がすでに公開されて
+ * いれば、遅れて届いた配送は取りに行かずに終える。
  */
 export function googleCalendarReadJobHandler(deps: GoogleCalendarReadDeps): JobHandler {
   return async (job) => {
     if (job.kind !== 'read' || !isGoogleCalendarScope(job.scope)) {
       return { kind: 'abandoned', reason: 'not-a-google-calendar-read' };
+    }
+    if (
+      job.requestedAt !== undefined &&
+      (await coveredSince(deps.sync, job.scope, job.requestedAt))
+    ) {
+      return { kind: 'done' };
     }
     const outcome = await syncGoogleCalendar(deps, job.scope);
     switch (outcome.kind) {
@@ -353,6 +366,23 @@ export function googleCalendarReadJobHandler(deps: GoogleCalendarReadDeps): JobH
 }
 
 /**
+ * 公開済みの世代が `requestedAt` よりあとに始めた取得のものか。そうなら、その時点までの変更は
+ * 公開済みであり、取り直さなくてよい。
+ */
+async function coveredSince(
+  sync: SyncStateStore,
+  scope: SyncScope,
+  requestedAt: string,
+): Promise<boolean> {
+  const basis = parseSyncBasis((await sync.read(scope))?.cursor ?? null);
+  if (!basis) return false;
+  const fetched = Date.parse(basis.fetchedAt);
+  const requested = Date.parse(requestedAt);
+  // 同じ時刻は前後を決められないため、取り直す側に倒す。
+  return !Number.isNaN(fetched) && !Number.isNaN(requested) && fetched > requested;
+}
+
+/**
  * Webhook の合図を受けて、合図の接続と対象に当たる scope の再取得を預ける。通知の本文は使わず、
  * 通知だけで同期を完了としない（全体設計 3.5）。
  */
@@ -361,13 +391,15 @@ export async function enqueueReadsForSignal(
   sync: SyncStateStore,
   signal: WebhookSignal,
   watched: readonly SyncScope[],
+  /** 通知を受けた時刻（`InboundWebhook.receivedAt`）。 */
+  receivedAt: string,
 ): Promise<number> {
   let count = 0;
   for (const scope of watched) {
     if (!sameConnectionGeneration(scope.connection, signal.connection)) continue;
     if (scope.target !== signal.target) continue;
     const published = await sync.read(scope);
-    await queue.enqueue(readJob(scope, published?.generation ?? null));
+    await queue.enqueue(readJob(scope, published?.generation ?? null, receivedAt));
     count += 1;
   }
   return count;
