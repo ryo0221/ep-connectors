@@ -62,7 +62,7 @@ Tokenを使う処理をcallbackとして渡す形にはしない。差し口の�
 
 Adapterがmethod・URL・header・bodyを組み立てるため、送信先のhost名だけを許可しても、想定外のendpointやredirect先へ接続の権限を使われる余地が残る。Hostの`send`の実装は、次をすべて満たすことを必須の契約とする。Adapterの申告を信じるのではなく、Hostの側で検査する。
 
-- **操作の目録で許可する。** Adapterは、Providerごとに使う操作の目録（操作名、method、許可するorigin、pathの型、必要なscope）を静的に宣言する。Hostは要求の操作名を目録と照合し、method・origin（scheme・host・portの完全一致）・pathが目録の型に合わない要求を送らない。目録はconnectionのscopeとも照合し、接続の同意にない操作を拒否する。
+- **操作の目録で許可する。** Adapterは、Providerごとに使う操作の目録（操作名、method、許可するorigin、pathの型、必要なscope）を静的に宣言する。GraphQLのように一つのendpointで内容が変わる操作は、固定したdocumentのhashと変数の型を目録に載せる（[GitHub接続の設計の2](github/README.md#2-認証)）。Hostは要求の操作名を目録と照合し、method・origin（scheme・host・portの完全一致）・pathが目録の型に合わない要求を送らない。目録はconnectionのscopeとも照合し、接続の同意にない操作を拒否する。
 - **認証付きのredirectを辿らない。** Hostは認証付き要求の3xxを自動で辿らず、tokenを付けずに応答としてadapterへ返す。Adapterが次の要求として送り直す場合も、新しいURLを同じ目録の検査に通す。別originへの付け替えでtokenを送ることはない。Providerが仕様として別originへ誘導する操作（署名付きのダウンロードURLなど）は、目録で「認証なし」として宣言し、`HttpTransport`の側で扱う。
 - **認証に関わるheaderをadapterに指定させない。** `Authorization`、`Cookie`、`Proxy-Authorization`、およびProviderが認証に使うheaderを要求に含めた場合は、上書きせずに要求ごと拒否する。Hostが付けるのは認証のheaderだけで、他のheaderは目録で許可したものに限る。
 - **応答とerrorに秘密情報を出さない。** 応答から`Set-Cookie`、`WWW-Authenticate`など認証に関わるheaderを除いて返す。Hostのerrorの文言・log・例外には、token、送信したheader、query中の資格情報を含めない。
@@ -98,9 +98,16 @@ Raw token、authorization header、refresh tokenを、Editor向けDTO、操作�
 
 - `enqueue(job, notBefore)`で、serializeできるjobの参照を預ける。参照は種類ごとに次のどれかで、payloadの写しを持たない。実行するときに、送る内容や取得の条件を保管から読み直す。
   - `{ kind: 'step', operation, step }`：外部作用のstep。計画は台帳から読む（W1以降）。
-  - `{ kind: 'read', scope, expectedGeneration }`：rate limitや一時障害の後の再取得、Webhookの合図を受けた再取得、定期的な照合。取得の条件と基点は`SyncStateStore`から読む。台帳を使わず、読取の段階から使える。
+  - `{ kind: 'read', scope, expectedGeneration }`（scopeはConnectionKeyと対象を含む）：rate limitや一時障害の後の再取得、Webhookの合図を受けた再取得、定期的な照合。取得の条件と基点は`SyncStateStore`から読む。台帳を使わず、読取の段階から使える。
   - `{ kind: 'subscription', connection, subscription }`：Webhookの購読の作成・更新・停止。
-- Jobを実行する直前に、現在の権限・membership・connection・計画の期限を再確認する（`HostPolicy.authorizeDispatch`）。キューに入れた時点の判定を使い回さない。
+- Jobを実行する直前に、jobの種類ごとの条件を`HostPolicy.authorizeDispatch(job)`で再確認する。キューに入れた時点の判定を使い回さない。失効・tenantの切替・connectionの世代の変化を検知したら、そのjobを実行せずに終える。
+
+  | 種類           | 実行の直前に確かめること                                                                                                                                     |
+  | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+  | `step`         | 計画の有効期限と内容のdigest、現在のprincipal・membership・connection、送信先への権限                                                                        |
+  | `read`         | scopeのprincipal・connection・対象への閲覧の認可（GitHubでは[repository単位の認可](github/README.md#21-installationの権限と利用者の閲覧権限)）、期待する世代 |
+  | `subscription` | 購読の所有者（どのconnectionの購読か）と、connectionが有効であること                                                                                         |
+
 - 同じjobが二度実行されても安全にする。外部作用のstepの重複実行は台帳の`acquireStep`とfencing tokenで抑止し、キューの「一回だけ配送する」保証に頼らない。読取のjobは、`SyncStateStore.commit`の世代のCASで、古い世代や二重の取得が公開されないようにする。
 - SDK、HTTP client、proxyによる暗黙のretryは無効にし、retryはこの差し口だけで行う。
 
