@@ -291,6 +291,32 @@ export function tokenStoreContract(name: string, setup: TokenStoreContractSetup)
       expect(provider.received).toHaveLength(0);
     });
 
+    it.each(['foreign', 'older generation'] as const)(
+      'refuses to refresh or revoke a %s key and leaves the connection untouched',
+      async (which) => {
+        const { provider, harness, refreshCalls } = await arrange();
+        const key =
+          which === 'foreign'
+            ? harness.foreignConnection
+            : { ...harness.connection, generation: harness.connection.generation - 1 };
+        const scope = { connection: harness.connection, target: 'items', query: null };
+        const staged = await harness.syncState.stage(scope, null);
+        if (!staged.ok) throw new Error('stage failed');
+        await harness.syncState.commit(scope, null, staged.stagedGeneration, 'cursor-1');
+
+        // 進行中の正当な refresh があっても、そこへ合流させない。
+        const legitimate = harness.store().refresh(harness.connection);
+        expect(await harness.store().refresh(key)).toMatchObject({ ok: false, reason: 'policy' });
+        await legitimate;
+        expect(refreshCalls()).toBe(1);
+
+        expect(await harness.store().revoke(key)).toMatchObject({ ok: false, reason: 'policy' });
+        expect(await harness.syncState.read(scope)).not.toBeNull();
+        expect((await harness.store().send(harness.connection, listItems())).ok).toBe(true);
+        expect(provider.received).toHaveLength(1);
+      },
+    );
+
     it('stops sending after revoke and invalidates the sync basis of the connection', async () => {
       const { provider, harness } = await arrange();
       const scope = { connection: harness.connection, target: 'items', query: null };
@@ -299,7 +325,7 @@ export function tokenStoreContract(name: string, setup: TokenStoreContractSetup)
       await harness.syncState.commit(scope, null, staged.stagedGeneration, 'cursor-1');
       expect(await harness.syncState.read(scope)).not.toBeNull();
 
-      await harness.store().revoke(harness.connection);
+      expect(await harness.store().revoke(harness.connection)).toEqual({ ok: true });
       const result = await harness.store().send(harness.connection, listItems());
       expect(result.ok).toBe(false);
       expect(provider.received).toHaveLength(0);

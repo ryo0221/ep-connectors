@@ -132,6 +132,52 @@ export function jobQueueContract(name: string, setup: JobQueueContractSetup): vo
       expect(ran).toBe(1);
     });
 
+    it('keeps the retry asked for by one delivery when a duplicate delivery did nothing', async () => {
+      const { harness, ledger } = await arrange();
+      await ledger().claim({
+        slot: 'slot-1',
+        operation: 'op-1',
+        planDigest: 'digest-1',
+        plan: null,
+        steps: ['calendar.create'],
+      });
+      await harness.queue().enqueue(JOBS.step);
+      const retryAt = '2026-01-01T00:01:00.000Z';
+      const handler: JobHandler = async (job) => {
+        if (job.kind !== 'step') return { kind: 'abandoned', reason: 'unexpected job' };
+        const worker = ledger();
+        const step = (await worker.read(job.operation))?.steps[job.step];
+        if (step?.state === 'unknown') {
+          const reconcile = await worker.acquireReconcile(job.operation, job.step, step.generation);
+          if (reconcile.kind !== 'acquired') return { kind: 'done' };
+          await worker.recordResult(
+            job.operation,
+            job.step,
+            { state: 'verified', at: retryAt },
+            reconcile.fence,
+          );
+          return { kind: 'done' };
+        }
+        const acquired = await worker.acquireStep(job.operation, job.step, step?.generation ?? -1);
+        // 送信権を得られなかった配送は、何もせずにすぐ終わる。
+        if (acquired.kind !== 'acquired') return { kind: 'done' };
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        // 送信後の timeout。結果は不明で、後で照合する。
+        await worker.recordResult(
+          job.operation,
+          job.step,
+          { state: 'unknown', at: NOW },
+          acquired.fence,
+        );
+        return { kind: 'retry', notBefore: retryAt };
+      };
+      await harness.deliver(handler, { now: NOW, deliveries: 2 });
+      expect((await ledger().listUnresolved()).map((step) => step.state)).toEqual(['unknown']);
+
+      await harness.deliver(handler, { now: retryAt });
+      expect(await ledger().listUnresolved()).toEqual([]);
+    });
+
     it('sends a step once when the same job is delivered twice', async () => {
       const { harness, ledger } = await arrange();
       await ledger().claim({
