@@ -15,7 +15,12 @@ export type SendError =
   | { kind: 'revoked' }
   | { kind: 'transport'; phase: 'before-send' | 'after-send' };
 
-export type RefreshResult = { ok: true } | { ok: false; reason: 'revoked' | 'transport' };
+export type RefreshResult =
+  | { ok: true }
+  | { ok: false; reason: 'revoked' | 'transport' }
+  | { ok: false; reason: 'policy'; denial: PolicyDenial };
+
+export type RevokeResult = { ok: true } | { ok: false; reason: 'policy'; denial: PolicyDenial };
 
 /**
  * 資格情報を保管し、認証付きの要求を送る Host の差し口（全体設計 3.2）。Token は adapter へ渡らない。
@@ -27,10 +32,16 @@ export type RefreshResult = { ok: true } | { ok: false; reason: 'revoked' | 'tra
  */
 export interface TokenStore {
   send(key: ConnectionKey, request: HttpRequest): Promise<SendResult>;
-  /** 同じ key への同時の refresh は、Host 側で一つにまとめる。 */
+  /**
+   * 同じ key への同時の refresh は、Host 側で一つにまとめる。`send` と同じく、現在の session の
+   * 現在の世代の key でなければ、進行中の refresh にも合流させずに拒否する。
+   */
   refresh(key: ConnectionKey): Promise<RefreshResult>;
-  /** 接続を解除し、その接続に束縛された同期の基点も無効にする。 */
-  revoke(key: ConnectionKey): Promise<void>;
+  /**
+   * 接続を解除し、その接続に束縛された同期の基点も無効にする。現在の session の現在の世代の key で
+   * なければ、何も変えずに拒否する。
+   */
+  revoke(key: ConnectionKey): Promise<RevokeResult>;
 }
 
 /** 認証の要らない通信の差し口（全体設計 3.7）。目録の `auth: 'none'` の操作だけを送る。 */
