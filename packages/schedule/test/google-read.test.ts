@@ -374,7 +374,8 @@ describe('Google Calendar read over the shared ports', () => {
     t.google.put(CALENDAR, timed('a', 3));
     t.google.put(CALENDAR, timed('b', 4));
     t.google.put(CALENDAR, timed('c', 5));
-    await t.deps().queue.enqueue({ kind: 'read', scope: t.scope, expectedGeneration: null });
+    await t.deps().queue.enqueue(readJob(t.scope, null, t.clock.now()));
+    t.clock.advance(1_000);
     await t.runJobs(2);
     expect(t.queueBacking.jobs[0]?.status).toBe('done');
     const read = await t.read();
@@ -416,6 +417,47 @@ describe('Google Calendar read over the shared ports', () => {
         readJob(t.scope, published?.generation ?? null, t.clock.now()),
       ),
     ).toEqual({ kind: 'done' });
+    expect(titles(await t.read())).toEqual(['a', 'b']);
+  });
+
+  it('retries a job that lost to a publication that started before the request', async () => {
+    const t = setup();
+    t.google.put(CALENDAR, timed('a', 3));
+    await syncGoogleCalendar(t.deps(), t.scope);
+    const olderStart = t.clock.now();
+    t.google.put(CALENDAR, timed('b', 4));
+    t.clock.advance(1_000);
+    const job = readJob(t.scope, 1, t.clock.now());
+
+    // 合図より前に取り始めた別の同期が、この job の commit より先に公開する。
+    const racing = t.deps();
+    const tokens = racing.tokens;
+    let raced = false;
+    racing.tokens = Object.assign(Object.create(tokens) as typeof tokens, {
+      send: async (...args: Parameters<typeof tokens.send>) => {
+        const sent = await tokens.send(...args);
+        if (!raced) {
+          raced = true;
+          const store = t.deps().sync;
+          const current = await store.read(t.scope);
+          const staged = await store.stage(t.scope, current?.generation ?? null);
+          if (!staged.ok) throw new Error('stage failed');
+          await store.commit(
+            t.scope,
+            current?.generation ?? null,
+            staged.stagedGeneration,
+            JSON.stringify({ v: 1, syncToken: 'sync-1', fetchedAt: olderStart }),
+          );
+        }
+        return sent;
+      },
+    });
+    expect(await googleCalendarReadJobHandler(racing)(job)).toEqual({
+      kind: 'retry',
+      notBefore: t.clock.now(),
+    });
+    expect(titles(await t.read())).toEqual(['a']);
+    expect(await googleCalendarReadJobHandler(t.deps())(job)).toEqual({ kind: 'done' });
     expect(titles(await t.read())).toEqual(['a', 'b']);
   });
 

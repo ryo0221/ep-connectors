@@ -353,8 +353,16 @@ export function googleCalendarReadJobHandler(deps: GoogleCalendarReadDeps): JobH
     const outcome = await syncGoogleCalendar(deps, job.scope);
     switch (outcome.kind) {
       case 'committed':
-      case 'superseded':
         return { kind: 'done' };
+      case 'superseded':
+        // 先に公開した取得が、取り直しの要る時刻より前に始まっていたら、その変更を含まない。
+        if (
+          job.requestedAt !== undefined &&
+          (await coveredSince(deps.sync, job.scope, job.requestedAt))
+        ) {
+          return { kind: 'done' };
+        }
+        return { kind: 'retry', notBefore: deps.clock.now() };
       case 'deferred':
         return { kind: 'retry', notBefore: outcome.notBefore };
       case 'incomplete':
