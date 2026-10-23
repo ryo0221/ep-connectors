@@ -522,6 +522,22 @@ describe('Google Calendar read over the shared ports', () => {
     expect(await t.read()).toEqual(published);
   });
 
+  it.each([
+    ['an impossible date', { date: '2026-99-01' }, { date: '2026-99-02' }],
+    ['an end before the start', { date: '2026-11-04' }, { date: '2026-11-03' }],
+  ])('fails the page on %s instead of removing the cached event', async (_label, start, end) => {
+    const t = setup();
+    t.google.put(CALENDAR, timed('a', 3));
+    await syncGoogleCalendar(t.deps(), t.scope);
+    const published = await t.read();
+    t.google.inject(json(200, { items: [{ id: 'a', start, end }], nextSyncToken: 'sync-9' }));
+    expect(await syncGoogleCalendar(t.deps(), t.scope)).toEqual({
+      kind: 'failed',
+      reason: 'malformed-response',
+    });
+    expect(await t.read()).toEqual(published);
+  });
+
   it('does not commit when the page limit is reached', async () => {
     const t = setup();
     for (let day = 1; day <= 5; day += 1) t.google.put(CALENDAR, timed(`e${day}`, day));

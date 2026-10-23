@@ -63,7 +63,9 @@ export function parseEventsPage(body: string, window: { start: string; end: stri
     const event = toCachedEvent(item);
     if (!event) return { ok: false };
     const span = eventSpan(event);
-    if (!span || span.end <= from || span.start >= to) {
+    // 日付が読めない、終わりが始まりより前の予定は、削除として扱わずにページごと失敗にする。
+    if (!span) return { ok: false };
+    if (span.end <= from || span.start >= to) {
       result.removals.push(item.id);
       continue;
     }
