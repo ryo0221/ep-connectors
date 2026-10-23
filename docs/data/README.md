@@ -20,6 +20,15 @@ R1の最初の接続先は表計算とし、Google Sheetsを選んだ（2026-10-
 - 必要なscopeは`https://www.googleapis.com/auth/spreadsheets.readonly`とし、目録に載せる。より広いscope（`drive.readonly`など）だけを持つconnectionでは送らない。
 - 範囲の指定（spreadsheet IDの形、範囲の長さと制御文字）は送る前に検査し、不正なら`TypeError`で拒否する。
 
+### 2.1 Spreadsheetと範囲の閲覧の認可
+
+`spreadsheets.readonly`のscopeは、接続した利用者が読めるすべてのspreadsheetに届く。Scopeは接続がその表を読めることの証明であり、Hostのprincipal・projectがその表を読んでよいことの証明ではない。そこで、[GitHubのrepository単位の認可](../github/README.md#21-installationの権限と利用者の閲覧権限)と同じく、資源ごとの認可を分ける。
+
+- 目録は要求から二つの資源を取り出す。`google-sheets.spreadsheet`（pathの`spreadsheetId`）と`google-sheets.range`（ちょうど一つの`ranges`の値）である。Hostの`TokenStore.send`は、この組を`HostPolicy.authorizeResources`でprincipal・projectごとに認可し、拒否されたら送らない。範囲のない要求、範囲を二つ以上含む要求も送らない。
+- Hostは、projectに登録した（spreadsheet、範囲）の組と完全一致で比べる。A1表記の包含（`A1:D10`が`A1:Z100`に含まれるか）をHostに推定させない。
+- 表示のたびに、`readSheetsRange`が同じ組で`authorizeResources`を呼ぶ。Projectから外された表や、spaceから退室した利用者には、写しが残っていても返さない。
+- 送信の時に認可されなかった場合（`not-authorized`）は、その範囲の写しを無効にする。
+
 ## 3. 読取のDTO
 
 `@ep-connectors/data`の`TableRangeRead`を、表の範囲の読取の共通のDTOとする。Excel・DBを足しても同じ形で返す。
@@ -32,7 +41,7 @@ R1の最初の接続先は表計算とし、Google Sheetsを選んだ（2026-10-
 | `generation`、`fetchedAt`、`contentHash`                               | 公開済みの世代、その内容を取得した時刻、内容のhash。内容が変わらない再取得では、世代も`fetchedAt`も進めない |
 
 - セルの値は`string | number | boolean | null`だけとし、書式・数式・型の推定（日付・通貨）は含めない。日付の解釈はEditorが行う。
-- 公開する範囲は、全体を取り終えたものだけである。途中まで取れた範囲を公開しないため、DTOに不完全の状態を持たない。まだ公開されていなければ`null`を返す。
+- 公開する範囲は、全体を取り終えたものだけである。途中まで取れた範囲を公開しないため、DTOに不完全の状態を持たない。表示の認可が通らなければその理由を、まだ公開されていなければ`not-synced`を返す。
 - 値は未信頼の入力であり、plain textのまま返す。セルの中のURLを開かない。
 - 読んだ内容は「その時点の写し」であり、Sheetsの版ではない。
 

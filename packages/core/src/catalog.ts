@@ -1,6 +1,7 @@
 import type { HttpMethod, HttpRequest } from './http.js';
 import { CREDENTIAL_REQUEST_HEADERS, normalizeHeaders } from './http.js';
 import type { JsonValue } from './json.js';
+import type { ResourceRef } from './policy.js';
 
 /**
  * Provider ごとに adapter が静的に宣言する操作の目録（全体設計 3.2.1）。Host はこの目録で
@@ -34,7 +35,22 @@ export interface CatalogOperation {
   auth: 'token' | 'none';
   /** GraphQL のように一つの endpoint で内容が変わる操作では、固定した document と変数の型を載せる。 */
   graphql?: GraphqlOperation;
+  /**
+   * 要求が触れる資源（GitHub の repository など）を、path の値か GraphQL の変数から取り出す規則。
+   * Host は取り出した資源を `HostPolicy.authorizeResources` で principal ごとに認可してから送る。
+   */
+  resources?: readonly ResourceBinding[];
 }
+
+/**
+ * 資源の取り出し方。`path` は path の型の `{name}` を並べた順に `/` でつなぐ（例 `owner/repo`）。
+ * `variable` は GraphQL の変数の値をそのまま使う。`query` は query parameter の値で、ちょうど一つ
+ * 指定された要求だけを通す（Google Sheets の `ranges` など）。
+ */
+export type ResourceBinding =
+  | { kind: string; path: readonly string[] }
+  | { kind: string; variable: string }
+  | { kind: string; query: string };
 
 export interface GraphqlOperation {
   /** `graphqlDocumentHash` で求めた、正規化した document の hash。 */
@@ -64,10 +80,11 @@ export type CatalogRejection =
   | 'header'
   | 'scope'
   | 'graphql-document'
-  | 'graphql-variables';
+  | 'graphql-variables'
+  | 'resource';
 
 export type CatalogCheck =
-  | { ok: true; operation: CatalogOperation }
+  | { ok: true; operation: CatalogOperation; resources: ResourceRef[] }
   | { ok: false; reason: CatalogRejection; operation?: string };
 
 export interface CatalogCheckInput {
@@ -106,7 +123,8 @@ export async function checkCatalogRequest(input: CatalogCheckInput): Promise<Cat
   if (url.username || url.password || url.hash) return reject('url');
   if (url.protocol !== 'https:') return reject('origin');
   if (url.origin !== new URL(operation.origin).origin) return reject('origin');
-  if (!matchesPath(operation.path, url.pathname)) return reject('path');
+  const pathParams = matchPath(operation.path, url.pathname);
+  if (!pathParams) return reject('path');
   const allowedQuery = operation.query ?? [];
   for (const name of url.searchParams.keys()) {
     if (!allowedQuery.includes(name)) return reject('query');
@@ -123,26 +141,54 @@ export async function checkCatalogRequest(input: CatalogCheckInput): Promise<Cat
     if (!operation.scopes.every((scope) => granted.includes(scope))) return reject('scope');
   }
 
+  let variables: Record<string, unknown> = {};
   if (operation.graphql) {
     const graphql = await checkGraphql(operation.graphql, request.body);
-    if (graphql) return reject(graphql);
+    if (typeof graphql === 'string') return reject(graphql);
+    variables = graphql.variables;
   }
-  return { ok: true, operation };
+
+  const resources: ResourceRef[] = [];
+  for (const binding of operation.resources ?? []) {
+    const id =
+      'path' in binding
+        ? binding.path.every((name) => name in pathParams)
+          ? binding.path.map((name) => pathParams[name]).join('/')
+          : null
+        : 'query' in binding
+          ? singleQueryValue(url.searchParams, binding.query)
+          : variables[binding.variable];
+    if (typeof id !== 'string' || id === '') return reject('resource');
+    resources.push({ kind: binding.kind, id });
+  }
+  return { ok: true, operation, resources };
 }
 
-function matchesPath(pattern: string, pathname: string): boolean {
+function singleQueryValue(params: URLSearchParams, name: string): string | null {
+  const values = params.getAll(name);
+  return values.length === 1 ? (values[0] as string) : null;
+}
+
+/** 一致すれば `{name}` ごとの decode した値を返す。 */
+function matchPath(pattern: string, pathname: string): Record<string, string> | null {
   const expected = pattern.split('/');
   const actual = pathname.split('/');
-  if (expected.length !== actual.length) return false;
-  return expected.every((part, index) => {
+  if (expected.length !== actual.length) return null;
+  const params: Record<string, string> = {};
+  const matched = expected.every((part, index) => {
     const segment = actual[index] as string;
     if (part.startsWith('{') && part.endsWith('}')) {
       if (!SEGMENT.test(segment)) return false;
       const decoded = safeDecode(segment);
-      return decoded !== null && decoded !== '.' && decoded !== '..' && !decoded.includes('/');
+      if (decoded === null || decoded === '.' || decoded === '..' || decoded.includes('/')) {
+        return false;
+      }
+      params[part.slice(1, -1)] = decoded;
+      return true;
     }
     return part === segment;
   });
+  return matched ? params : null;
 }
 
 function safeDecode(segment: string): string | null {
@@ -156,7 +202,7 @@ function safeDecode(segment: string): string | null {
 async function checkGraphql(
   rule: GraphqlOperation,
   body: string | undefined,
-): Promise<CatalogRejection | null> {
+): Promise<CatalogRejection | { variables: Record<string, unknown> }> {
   let parsed: unknown;
   try {
     parsed = JSON.parse(body ?? '');
@@ -178,7 +224,7 @@ async function checkGraphql(
   for (const [name, variable] of Object.entries(rule.variables)) {
     if (variable.required && !(name in variables)) return 'graphql-variables';
   }
-  return null;
+  return { variables };
 }
 
 function matchesVariable(rule: GraphqlVariableRule, value: JsonValue): boolean {

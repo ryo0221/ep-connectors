@@ -1,11 +1,14 @@
 import type {
   Clock,
   ConnectionKey,
+  HostPolicy,
   HttpRequest,
   HttpResponse,
   JobHandler,
   JsonValue,
   OperationCapability,
+  PolicyDenial,
+  ResourceRef,
   SendResult,
   SyncEntry,
   SyncScope,
@@ -14,7 +17,12 @@ import type {
 } from '@ep-connectors/core';
 import { canonicalJson } from '@ep-connectors/core';
 import type { CellValue, TableRangeRead, ValueRender } from '../table-range.js';
-import { GOOGLE_SHEETS_PROVIDER, SHEETS_ORIGIN } from './catalog.js';
+import {
+  GOOGLE_SHEETS_PROVIDER,
+  RANGE_RESOURCE,
+  SHEETS_ORIGIN,
+  SPREADSHEET_RESOURCE,
+} from './catalog.js';
 
 /** 読む範囲の指定。`range` は A1 表記（例 `'Q1 予算'!A1:F200`）。 */
 export interface SheetsRangeTarget {
@@ -39,6 +47,8 @@ export interface SheetsReadDeps {
 export type SheetsReadFailure =
   | 'invalid-target'
   | 'policy'
+  /** Host が spreadsheet か範囲の閲覧を認可しなかった。 */
+  | 'not-authorized'
   | 'catalog'
   | 'revoked'
   | 'unauthorized'
@@ -137,7 +147,13 @@ export async function syncSheetsRange(
   let staged = expected === null ? await deps.syncState.stage(scope, null) : null;
 
   const sent = await sendWithRefresh(deps, scope.connection, buildRequest(target));
-  if (sent.kind !== 'response') return sent.result;
+  if (sent.kind !== 'response') {
+    // Project から外された表の写しを、本人向けにも残さない。
+    if (sent.result.kind === 'failed' && sent.result.reason === 'not-authorized') {
+      await deps.syncState.invalidate(scope);
+    }
+    return sent.result;
+  }
   const response = sent.response;
 
   if (response.status === 403 || response.status === 404) {
@@ -196,8 +212,39 @@ export async function syncSheetsRange(
   return { kind: 'published', generation: committed.generation };
 }
 
-/** 公開済みの世代から読取の DTO を組み立てる。まだ公開されていなければ `null`。 */
+/** 要求が触れる資源。`TokenStore.send` が目録から取り出すものと同じ組。 */
+export function sheetsRangeResources(target: SheetsRangeTarget): ResourceRef[] {
+  return [
+    { kind: SPREADSHEET_RESOURCE, id: target.spreadsheetId },
+    { kind: RANGE_RESOURCE, id: target.range },
+  ];
+}
+
+export type SheetsRangeRead =
+  | { ok: true; read: TableRangeRead }
+  | { ok: false; reason: PolicyDenial | 'invalid-target' | 'not-synced' };
+
+/**
+ * 公開済みの世代から、本人向けの読取の DTO を組み立てる。写しは接続の中で共有してよいが、表示の
+ * たびに `HostPolicy.authorizeResources` で principal・project の spreadsheet と範囲の閲覧を確かめる。
+ * Project から外された表や、退室した利用者には、写しが残っていても返さない。
+ */
 export async function readSheetsRange(
+  deps: { policy: HostPolicy; syncState: SyncStateStore },
+  scope: SyncScope,
+): Promise<SheetsRangeRead> {
+  const target = parseSheetsScope(scope);
+  if (!target) return { ok: false, reason: 'invalid-target' };
+  const decision = await deps.policy.authorizeResources(
+    scope.connection,
+    sheetsRangeResources(target),
+  );
+  if (!decision.ok) return { ok: false, reason: decision.reason };
+  const read = await readPublished(deps.syncState, scope);
+  return read ? { ok: true, read } : { ok: false, reason: 'not-synced' };
+}
+
+async function readPublished(
   syncState: SyncStateStore,
   scope: SyncScope,
 ): Promise<TableRangeRead | null> {
@@ -317,7 +364,13 @@ function fromSend(deps: SheetsReadDeps, result: SendResult): Sent {
   if (result.ok) return { kind: 'response', response: result.response };
   switch (result.error.kind) {
     case 'policy':
-      return { kind: 'done', result: { kind: 'failed', reason: 'policy' } };
+      return {
+        kind: 'done',
+        result: {
+          kind: 'failed',
+          reason: result.error.reason === 'forbidden' ? 'not-authorized' : 'policy',
+        },
+      };
     case 'catalog':
       return { kind: 'done', result: { kind: 'failed', reason: 'catalog' } };
     case 'revoked':
