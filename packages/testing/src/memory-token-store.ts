@@ -4,7 +4,9 @@ import type {
   HttpRequest,
   HttpTransport,
   OperationCatalog,
+  PolicyDenial,
   RefreshResult,
+  RevokeResult,
   SendResult,
   SyncStateStore,
   TokenStore,
@@ -57,13 +59,26 @@ export interface MemoryTokenStoreOptions {
 export class MemoryTokenStore implements TokenStore {
   constructor(private readonly options: MemoryTokenStoreOptions) {}
 
-  async send(key: ConnectionKey, request: HttpRequest): Promise<SendResult> {
+  /** 現在の session の、保管と同じ世代の接続かを確かめる。`send`・`refresh`・`revoke` が共有する。 */
+  private async current(
+    key: ConnectionKey,
+  ): Promise<
+    { ok: true; stored: StoredConnection | undefined } | { ok: false; denial: PolicyDenial }
+  > {
     const decision = await this.options.policy.authorizeConnection(key);
-    if (!decision.ok) return { ok: false, error: { kind: 'policy', reason: decision.reason } };
+    if (!decision.ok) return { ok: false, denial: decision.reason };
     const stored = this.options.backing.connections.get(connectionIdentity(key));
-    if (!stored || stored.revoked || stored.key.generation !== key.generation) {
-      return { ok: false, error: { kind: 'revoked' } };
+    if (stored && stored.key.generation !== key.generation) {
+      return { ok: false, denial: 'connection-generation-changed' };
     }
+    return { ok: true, stored };
+  }
+
+  async send(key: ConnectionKey, request: HttpRequest): Promise<SendResult> {
+    const current = await this.current(key);
+    if (!current.ok) return { ok: false, error: { kind: 'policy', reason: current.denial } };
+    const stored = current.stored;
+    if (!stored || stored.revoked) return { ok: false, error: { kind: 'revoked' } };
     const catalog = this.options.catalogs.find((candidate) => candidate.provider === key.provider);
     if (!catalog) return { ok: false, error: { kind: 'catalog', reason: 'unknown-operation' } };
     const check = await checkCatalogRequest({
@@ -101,6 +116,8 @@ export class MemoryTokenStore implements TokenStore {
   }
 
   async refresh(key: ConnectionKey): Promise<RefreshResult> {
+    const current = await this.current(key);
+    if (!current.ok) return { ok: false, reason: 'policy', denial: current.denial };
     const identity = connectionIdentity(key);
     const inFlight = this.options.backing.refreshing.get(identity);
     if (inFlight) return inFlight;
@@ -128,10 +145,12 @@ export class MemoryTokenStore implements TokenStore {
     }
   }
 
-  async revoke(key: ConnectionKey): Promise<void> {
-    const stored = this.options.backing.connections.get(connectionIdentity(key));
-    if (stored) stored.revoked = true;
+  async revoke(key: ConnectionKey): Promise<RevokeResult> {
+    const current = await this.current(key);
+    if (!current.ok) return { ok: false, reason: 'policy', denial: current.denial };
+    if (current.stored) current.stored.revoked = true;
     await this.options.syncState?.invalidateConnection(key);
+    return { ok: true };
   }
 }
 

@@ -1,4 +1,11 @@
-import type { EnqueueOptions, HostPolicy, JobHandler, JobQueue, JobRef } from '@ep-connectors/core';
+import type {
+  EnqueueOptions,
+  HostPolicy,
+  JobHandler,
+  JobOutcome,
+  JobQueue,
+  JobRef,
+} from '@ep-connectors/core';
 
 export interface QueuedJob {
   jobId: string;
@@ -56,26 +63,39 @@ export async function runDueJobs(
       (entry.notBefore === null || Date.parse(entry.notBefore) <= Date.parse(options.now)),
   );
   await Promise.all(
-    due.flatMap((entry) =>
-      Array.from({ length: options.deliveries ?? 1 }, () => deliver(entry, options)),
-    ),
+    due.map(async (entry) => {
+      const outcomes = await Promise.all(
+        Array.from({ length: options.deliveries ?? 1 }, () => deliver(entry, options)),
+      );
+      settle(entry, outcomes);
+    }),
   );
 }
 
-async function deliver(entry: QueuedJob, options: RunDueOptions): Promise<void> {
+async function deliver(entry: QueuedJob, options: RunDueOptions): Promise<JobOutcome> {
   const job = structuredClone(entry.job);
   const decision = await options.policy.authorizeDispatch(job);
-  if (!decision.ok) {
-    entry.status = 'abandoned';
-    entry.abandonedReason = decision.reason;
+  if (!decision.ok) return { kind: 'abandoned', reason: decision.reason };
+  return options.handler(job);
+}
+
+/**
+ * 重複した配送の結果をまとめる。送信権を得られずに何もしなかった配送の `done` で、送信権を持つ
+ * 配送が求めた `retry` を消さない。`retry`（最も早い時刻）、`abandoned`、`done` の順に優先する。
+ */
+function settle(entry: QueuedJob, outcomes: JobOutcome[]): void {
+  const retries = outcomes.filter((outcome) => outcome.kind === 'retry');
+  if (retries.length > 0) {
+    entry.notBefore = retries
+      .map((outcome) => outcome.notBefore)
+      .reduce((earliest, next) => (Date.parse(next) < Date.parse(earliest) ? next : earliest));
     return;
   }
-  const outcome = await options.handler(job);
-  if (entry.status !== 'pending') return;
-  if (outcome.kind === 'done') entry.status = 'done';
-  else if (outcome.kind === 'retry') entry.notBefore = outcome.notBefore;
-  else {
+  const abandoned = outcomes.find((outcome) => outcome.kind === 'abandoned');
+  if (abandoned) {
     entry.status = 'abandoned';
-    entry.abandonedReason = outcome.reason;
+    entry.abandonedReason = abandoned.reason;
+    return;
   }
+  entry.status = 'done';
 }
