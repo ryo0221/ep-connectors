@@ -49,8 +49,12 @@ function declarations(file) {
   }
   return result;
 }
+/** Comment を除き、引用符などの書き方も同じ設定の prettier で揃えた宣言。 */
 const normalized = (file, { statement }) =>
-  printer.printNode(ts.EmitHint.Unspecified, statement, file);
+  prettier.format(printer.printNode(ts.EmitHint.Unspecified, statement, file), {
+    parser: 'typescript',
+    singleQuote: true,
+  });
 
 const problems = [];
 const commit = git('rev-parse', 'HEAD');
@@ -78,7 +82,7 @@ for (const copy of manifest.copies) {
       texts.push(original.text);
       const mine = copied.get(name);
       if (!mine) problems.push(`${copy.target}: ${name} is missing`);
-      else if (normalized(file, original) !== normalized(target, mine))
+      else if ((await normalized(file, original)) !== (await normalized(target, mine)))
         problems.push(`${copy.target}: ${name} differs from ${source.path}`);
     }
     if (write) source.lastChanged = git('log', '-1', '--format=%H', '--', source.path);
