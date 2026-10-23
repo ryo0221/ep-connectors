@@ -374,3 +374,66 @@ describe('describeCollection', () => {
     });
   });
 });
+
+describe('untrusted response edges', () => {
+  it('treats an unreadable next link as an error, not as the last page', async () => {
+    const setup = publicSetup({
+      intercept: () =>
+        json(
+          200,
+          {
+            type: 'FeatureCollection',
+            features: [],
+            links: [{ rel: 'next', href: 'https://[', type: 'application/geo+json' }],
+          },
+          { 'content-type': 'application/geo+json' },
+        ),
+    });
+    expect(await readFeaturesPage(setup.reader, QUERY, null)).toEqual({
+      ok: false,
+      error: { kind: 'next-link', reason: 'url' },
+    });
+  });
+
+  it('returns no wait time for a Retry-After it cannot represent', async () => {
+    const setup = publicSetup({
+      intercept: () => json(429, {}, { 'retry-after': '9999999999999' }),
+    });
+    expect(await readFeaturesPage(setup.reader, QUERY, null)).toEqual({
+      ok: false,
+      error: { kind: 'rate-limited', retryAfter: null },
+    });
+  });
+
+  it('keeps a __proto__ property as data', async () => {
+    const collection = stations();
+    collection.features = [
+      {
+        at: [139.75, 35.65],
+        feature: JSON.parse(
+          '{"type":"Feature","id":"p","geometry":null,"properties":{"__proto__":{"polluted":true}}}',
+        ),
+      },
+    ];
+    const setup = publicSetup({ collections: [collection] });
+    const result = await readFeaturesPage(setup.reader, QUERY, null);
+    if (!result.ok) throw new Error(JSON.stringify(result.error));
+    const properties = result.value.features[0]?.properties ?? {};
+    expect(Object.keys(properties)).toEqual(['__proto__']);
+    expect((properties as Record<string, unknown>).polluted).toBeUndefined();
+    expect(JSON.stringify(properties)).toBe('{"__proto__":{"polluted":true}}');
+  });
+
+  it('rejects ids it would have to rewrite instead of merging distinct features', async () => {
+    const collection = stations();
+    collection.features = [
+      pointFeature('ab', [139.75, 35.65]),
+      pointFeature('a\u0000b', [139.75, 35.65]),
+    ];
+    const setup = publicSetup({ collections: [collection] });
+    const result = await readFeaturesPage(setup.reader, QUERY, null);
+    if (!result.ok) throw new Error(JSON.stringify(result.error));
+    expect(result.value.features.map((feature) => feature.id)).toEqual(['ab']);
+    expect(result.value.rejected).toEqual([{ index: 1, id: null, reason: 'invalid-feature' }]);
+  });
+});

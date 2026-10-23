@@ -52,6 +52,35 @@ describe('syncFeatures', () => {
     });
   });
 
+  it('keeps the previous generation when a page has an unreadable next link', async () => {
+    const backing = createSyncBacking();
+    const scope = publicScope();
+    const first = await syncFeatures(
+      publicSetup().reader,
+      new MemorySyncStateStore(backing),
+      scope,
+      QUERY,
+      null,
+    );
+    if (!first.ok) throw new Error('first sync failed');
+    const broken = publicSetup({ rewriteNext: () => 'https://[' });
+    const second = await syncFeatures(
+      broken.reader,
+      new MemorySyncStateStore(backing),
+      scope,
+      QUERY,
+      first.generation,
+    );
+    expect(second).toEqual({
+      ok: false,
+      reason: 'failed',
+      error: { kind: 'read', error: { kind: 'next-link', reason: 'url' } },
+    });
+    const published = await new MemorySyncStateStore(backing).read(scope);
+    expect(published?.generation).toBe(first.generation);
+    expect(published?.entries).toHaveLength(25);
+  });
+
   it('publishes nothing when a later page fails, and keeps the previous generation', async () => {
     const backing = createSyncBacking();
     const scope = publicScope();
@@ -335,6 +364,16 @@ describe('read jobs', () => {
     expect(
       await env.handler({ kind: 'read', scope: publicScope(), expectedGeneration: null }),
     ).toEqual({ kind: 'abandoned', reason: 'unsupported-crs' });
+  });
+
+  it('falls back to the default delay when Retry-After cannot be used', async () => {
+    const env = queueSetup({ intercept: () => json(429, {}, { 'retry-after': '9999999999999' }) });
+    expect(
+      await env.handler({ kind: 'read', scope: publicScope(), expectedGeneration: null }),
+    ).toEqual({
+      kind: 'retry',
+      notBefore: '2026-10-23T00:01:00.000Z',
+    });
   });
 
   it('retries after a transport failure', async () => {

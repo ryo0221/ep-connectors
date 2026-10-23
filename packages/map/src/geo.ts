@@ -116,8 +116,12 @@ export function parseFeature(
     return { ok: false, id: null, reason: 'invalid-feature' };
   }
   let id: string | null = null;
-  if (typeof value.id === 'string') id = plainText(value.id);
-  else if (typeof value.id === 'number' && Number.isFinite(value.id)) id = String(value.id);
+  // ID は Provider の不透明な識別子として写す。書き換えると別の地物が同じ ID になり得るため、
+  // plain text として扱えない文字を含む ID は拒否する。
+  if (typeof value.id === 'string') {
+    if (plainText(value.id) !== value.id) return { ok: false, id: null, reason: 'invalid-feature' };
+    id = value.id;
+  } else if (typeof value.id === 'number' && Number.isFinite(value.id)) id = String(value.id);
   else if (value.id !== undefined && value.id !== null) {
     return { ok: false, id: null, reason: 'invalid-feature' };
   }
@@ -134,8 +138,9 @@ export function parseFeature(
 }
 
 // 制御文字（tab・改行を除く）と、表示の向きを変える文字を除く。
-// eslint-disable-next-line no-control-regex
-const UNSAFE_TEXT = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F‪-‮⁦-⁩]/g;
+const UNSAFE_TEXT =
+  // eslint-disable-next-line no-control-regex
+  /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F\u202A-\u202E\u2066-\u2069]/g;
 
 /** 外部から読んだ文字列を plain text として扱えるようにする。HTML の解釈や URL の展開はしない。 */
 export function plainText(value: string): string {
@@ -153,7 +158,15 @@ function plainValue(value: unknown): JsonValue {
 
 function plainObject(value: Record<string, unknown>): JsonObject {
   const result: JsonObject = {};
-  for (const [key, member] of Object.entries(value)) result[plainText(key)] = plainValue(member);
+  for (const [key, member] of Object.entries(value)) {
+    // `__proto__` などの名前も data として持つ。代入では prototype の setter が呼ばれる。
+    Object.defineProperty(result, plainText(key), {
+      value: plainValue(member),
+      enumerable: true,
+      writable: true,
+      configurable: true,
+    });
+  }
   return result;
 }
 

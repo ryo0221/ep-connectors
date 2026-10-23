@@ -159,7 +159,8 @@ export async function readFeaturesPage(
     else rejected.push({ index, id: parsed.id, reason: parsed.reason });
   });
 
-  const links = parseLinks(body.links, url);
+  const { links, brokenNext } = parseLinks(body.links, url);
+  if (brokenNext) return fail({ kind: 'next-link', reason: 'url' });
   let next: string | null = null;
   const nextLinks = links.filter((link) => link.rel === 'next');
   if (nextLinks.length > 0) {
@@ -225,7 +226,7 @@ export async function describeCollection(
       crs,
       supportsCrs84: crs.some((value) => CRS84_URIS.includes(value)),
       attribution: optionalText(body.attribution),
-      licenses: parseLinks(body.links, url).filter((link) => link.rel === 'license'),
+      licenses: parseLinks(body.links, url).links.filter((link) => link.rel === 'license'),
       retrievedAt: reader.clock.now(),
     },
   };
@@ -315,11 +316,12 @@ function responseCrs(response: HttpResponse): string | null {
 function retryAfter(clock: Clock, response: HttpResponse): string | null {
   const value = response.headers['retry-after']?.trim();
   if (!value) return null;
-  if (/^\d+$/.test(value)) {
-    return new Date(Date.parse(clock.now()) + Number(value) * 1000).toISOString();
-  }
-  const date = Date.parse(value);
-  return Number.isNaN(date) ? null : new Date(date).toISOString();
+  const date = /^\d+$/.test(value)
+    ? Date.parse(clock.now()) + Number(value) * 1000
+    : Date.parse(value);
+  // 表せない時刻は待機の指示がないものとして扱い、呼ぶ側の既定の待機に任せる。
+  const parsed = new Date(date);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
 }
 
 function parseJson(response: HttpResponse): unknown {
@@ -330,15 +332,22 @@ function parseJson(response: HttpResponse): unknown {
   }
 }
 
-function parseLinks(value: unknown, base: string): SourceLink[] {
-  if (!Array.isArray(value)) return [];
+/**
+ * `brokenNext` は、読めない `next` link があったこと。黙って捨てると最後のページと区別できず、
+ * 途中までの写しを全体として公開してしまう。
+ */
+function parseLinks(value: unknown, base: string): { links: SourceLink[]; brokenNext: boolean } {
   const links: SourceLink[] = [];
+  let brokenNext = false;
+  if (!Array.isArray(value)) return { links, brokenNext };
   for (const link of value) {
-    if (!isRecord(link) || typeof link.rel !== 'string' || typeof link.href !== 'string') continue;
+    if (!isRecord(link) || typeof link.rel !== 'string') continue;
     let href: string;
     try {
+      if (typeof link.href !== 'string') throw new TypeError('href');
       href = new URL(link.href, base).toString();
     } catch {
+      if (link.rel === 'next') brokenNext = true;
       continue;
     }
     links.push({
@@ -348,7 +357,7 @@ function parseLinks(value: unknown, base: string): SourceLink[] {
       title: optionalText(link.title),
     });
   }
-  return links;
+  return { links, brokenNext };
 }
 
 /** GeoJSON の `next` を選ぶ。HTML など別の形式の link しかなければ `null`。 */
