@@ -126,7 +126,7 @@ Providerからの変更通知の受け口。HTTPSの受信そのものはHostが
 
 - 基点は、ConnectionKey、対象（calendar、sheet、folderなど）、取得条件、固定した期間、baselineの世代に束縛して保管する。条件の違う基点を流用しない。
 - 全ページを取り終えるまで新しい基点をcommitしない。Baselineを失ったら残っている基点も無効にする。
-- 操作は`read`（公開済みの世代・基点・cacheだけを返す）、`stage(scope, basedOn)`（公開済みの世代を基にした差分か、`null`でbaselineからの作り直し）、`applyPage`、`commit`、`invalidate`、`invalidateConnection`（`TokenStore.revoke`が使う）とする。
+- 操作は`read`（公開済みの世代・基点・cacheだけを返す）、`stage(scope, basedOn)`（公開済みの世代を基にした差分か、`null`でbaselineからの作り直し）、`applyPage`、`commit`、`invalidate`、`invalidateConnection`（`TokenStore.revoke`が使う）とする。`invalidate`は期待する世代を渡すと、公開済みの世代が一致するときだけ無効にする（世代のCAS）。基点の失効（Googleの410など）を受けたworkerが、その間に別のworkerが公開した新しい世代を消さないためである。
 - 外部cacheと基点を別々に進めない。取得したページは新しい世代のstagingへ書き、全ページを適用してから、cacheの世代と基点を一つの操作で公開する（`commit(scope, expectedGeneration, stagedGeneration, cursor)`、世代のCAS）。読む側は公開済みの世代だけを見る。cacheの一部が未反映のまま基点だけが進む状態を作らない。
 - Hostがcacheと基点を同じ保管でatomicに更新できない場合も、公開の印を一つの記録としてatomicに書く。公開の印は「どの世代のcacheと、どの基点の組が公開済みか」を持つ唯一の記録であり、基点は印の中にだけ保管して、別の場所で先に進めない。手順は、cacheの世代Nを書き終えてから、印を（N、新しい基点）へCASで書き換える、の二段とする。印の書き換えがcommitであり、その前に止まれば印は前の組を指したまま、その後に止まれば新しい組を指す。どちらでも、cacheと基点の世代は一致する。
 - 再起動の後は、印（または同じ保管でのcommit）が指す世代と基点からだけ再開する。印が指していない世代のstagingだけを捨てる。印が指している世代は、書き終えたものとして保持する。

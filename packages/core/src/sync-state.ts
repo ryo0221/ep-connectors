@@ -35,6 +35,9 @@ export type StageResult =
   | { ok: true; stagedGeneration: number }
   | { ok: false; reason: 'stale-base' };
 export type PageResult = { ok: true } | { ok: false; reason: 'unknown-staging' };
+export type InvalidateResult =
+  | { ok: true }
+  | { ok: false; reason: 'generation-mismatch'; current: number | null };
 export type CommitResult =
   | { ok: true; generation: number }
   | { ok: false; reason: 'generation-mismatch' | 'unknown-staging'; current: number | null };
@@ -62,8 +65,13 @@ export interface SyncStateStore {
     stagedGeneration: number,
     cursor: string | null,
   ): Promise<CommitResult>;
-  /** Baseline と基点を無効にする。台帳・未解決の operation・Host の binding は消さない。 */
-  invalidate(scope: SyncScope): Promise<void>;
+  /**
+   * Baseline と基点を無効にする。台帳・未解決の operation・Host の binding は消さない。
+   * `expectedGeneration` を渡したときは、公開済みの世代がそれと一致するときだけ無効にする（CAS）。
+   * 410 を受けた worker が、その間に別の worker が公開した新しい世代を消さないために使う。
+   * 比較と削除は一つの操作として行い、`commit` と同じ保管で atomic にする。省くと無条件に無効にする。
+   */
+  invalidate(scope: SyncScope, expectedGeneration?: number): Promise<InvalidateResult>;
   /** その接続（世代を問わない）に束縛されたすべての scope を無効にする。`TokenStore.revoke` が使う。 */
   invalidateConnection(connection: ConnectionKey): Promise<void>;
 }

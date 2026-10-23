@@ -1,5 +1,6 @@
 import type {
   CommitResult,
+  InvalidateResult,
   ConnectionKey,
   PageResult,
   PublishedSync,
@@ -93,8 +94,15 @@ export class MemorySyncStateStore implements SyncStateStore {
     return { ok: true, generation: stagedGeneration };
   }
 
-  async invalidate(scope: SyncScope): Promise<void> {
-    this.backing.scopes.delete(syncScopeKey(scope));
+  async invalidate(scope: SyncScope, expectedGeneration?: number): Promise<InvalidateResult> {
+    const key = syncScopeKey(scope);
+    if (expectedGeneration !== undefined) {
+      const current = this.backing.scopes.get(key)?.published?.generation ?? null;
+      if (current !== expectedGeneration)
+        return { ok: false, reason: 'generation-mismatch', current };
+    }
+    this.backing.scopes.delete(key);
+    return { ok: true };
   }
 
   async invalidateConnection(connection: ConnectionKey): Promise<void> {

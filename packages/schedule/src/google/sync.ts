@@ -129,7 +129,7 @@ export async function syncGoogleCalendar(
   if (first.kind !== 'gone') return first;
   // 410 を受けた基点がまだ公開されているときだけ無効にする。別の worker が先に作り直して
   // 公開した世代を消さない。
-  if (!(await invalidateIfPublished(deps.sync, scope, first.generation))) {
+  if (!(await deps.sync.invalidate(scope, first.generation)).ok) {
     return { kind: 'superseded' };
   }
   const rebuilt = await syncOnce(deps, scope);
@@ -150,7 +150,7 @@ async function syncOnce(
   let expected = published?.generation ?? null;
   if (published && !basis) {
     // 読めない基点の上に差分を重ねない。
-    if (!(await invalidateIfPublished(deps.sync, scope, published.generation))) {
+    if (!(await deps.sync.invalidate(scope, published.generation)).ok) {
       return { kind: 'superseded' };
     }
     expected = null;
@@ -196,21 +196,6 @@ async function syncOnce(
     if (!committed.ok) return { kind: 'superseded' };
     return { kind: 'committed', generation: committed.generation, mode, pages };
   }
-}
-
-/**
- * 公開済みの世代が `generation` のままなら scope を無効にする。Core の `invalidate` は世代を
- * 取らないため、読んでから無効にするまでの間に別の worker が公開した場合は防げない。その間は
- * 短く、失っても次の同期で作り直せる cache だけである。
- */
-async function invalidateIfPublished(
-  sync: SyncStateStore,
-  scope: SyncScope,
-  generation: number,
-): Promise<boolean> {
-  if ((await sync.read(scope))?.generation !== generation) return false;
-  await sync.invalidate(scope);
-  return true;
 }
 
 function eventsListRequest(
