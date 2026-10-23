@@ -1,0 +1,24 @@
+name: Verify ep-connectors
+# Actions の利用枠を使い切っているため、EditorPlatform と同じく手動実行だけにしている（2026-10-23）。
+# 枠が戻ったら pull_request と main への push を足す。secret は使わない。
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    strategy:
+      matrix:
+        node-version: [22.13.0, 24.19.0]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+      - run: npm ci
+      - run: npm run check
