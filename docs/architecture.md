@@ -96,9 +96,12 @@ Raw token、authorization header、refresh tokenを、Editor向けDTO、操作�
 
 再試行と非同期の照合を、Hostの実行基盤へ預ける差し口。
 
-- `enqueue(job, notBefore)`で、serializeできるjobを預ける。Jobはoperation IDと次のstepだけを持ち、payloadの写しを持たない。送る内容は台帳の計画から読み直す。
+- `enqueue(job, notBefore)`で、serializeできるjobの参照を預ける。参照は種類ごとに次のどれかで、payloadの写しを持たない。実行するときに、送る内容や取得の条件を保管から読み直す。
+  - `{ kind: 'step', operation, step }`：外部作用のstep。計画は台帳から読む（W1以降）。
+  - `{ kind: 'read', scope, expectedGeneration }`：rate limitや一時障害の後の再取得、Webhookの合図を受けた再取得、定期的な照合。取得の条件と基点は`SyncStateStore`から読む。台帳を使わず、読取の段階から使える。
+  - `{ kind: 'subscription', connection, subscription }`：Webhookの購読の作成・更新・停止。
 - Jobを実行する直前に、現在の権限・membership・connection・計画の期限を再確認する（`HostPolicy.authorizeDispatch`）。キューに入れた時点の判定を使い回さない。
-- 同じjobが二度実行されても安全にする。重複実行の抑止は台帳の`acquireStep`とfencing tokenで行い、キューの「一回だけ配送する」保証に頼らない。
+- 同じjobが二度実行されても安全にする。外部作用のstepの重複実行は台帳の`acquireStep`とfencing tokenで抑止し、キューの「一回だけ配送する」保証に頼らない。読取のjobは、`SyncStateStore.commit`の世代のCASで、古い世代や二重の取得が公開されないようにする。
 - SDK、HTTP client、proxyによる暗黙のretryは無効にし、retryはこの差し口だけで行う。
 
 ### 3.5 `WebhookIntake`
@@ -116,8 +119,8 @@ Providerからの変更通知の受け口。HTTPSの受信そのものはHostが
 - 基点は、ConnectionKey、対象（calendar、sheet、folderなど）、取得条件、固定した期間、baselineの世代に束縛して保管する。条件の違う基点を流用しない。
 - 全ページを取り終えるまで新しい基点をcommitしない。Baselineを失ったら残っている基点も無効にする。
 - 外部cacheと基点を別々に進めない。取得したページは新しい世代のstagingへ書き、全ページを適用してから、cacheの世代と基点を一つの操作で公開する（`commit(scope, expectedGeneration, stagedGeneration, cursor)`、世代のCAS）。読む側は公開済みの世代だけを見る。cacheの一部が未反映のまま基点だけが進む状態を作らない。
-- Hostがcacheと基点を同じ保管でatomicに更新できない場合は、復旧できる二段階の手順にする。先に「世代Nを公開する」意図を記録し、cacheの世代Nを書き終えてから基点を進め、最後に意図を完了にする。再起動時に完了していない意図があれば、stagingを捨てて公開済みの基点から読み直す。
-- 再起動の後は、公開済みの世代と基点からだけ再開する。Staging中だった世代は捨てる。
+- Hostがcacheと基点を同じ保管でatomicに更新できない場合も、公開の印を一つの記録としてatomicに書く。公開の印は「どの世代のcacheと、どの基点の組が公開済みか」を持つ唯一の記録であり、基点は印の中にだけ保管して、別の場所で先に進めない。手順は、cacheの世代Nを書き終えてから、印を（N、新しい基点）へCASで書き換える、の二段とする。印の書き換えがcommitであり、その前に止まれば印は前の組を指したまま、その後に止まれば新しい組を指す。どちらでも、cacheと基点の世代は一致する。
+- 再起動の後は、印（または同じ保管でのcommit）が指す世代と基点からだけ再開する。印が指していない世代のstagingだけを捨てる。印が指している世代は、書き終えたものとして保持する。
 - 外部cacheを作り直しても、台帳・未解決のoperation・Hostのbindingは消さない。
 
 ### 3.7 `HttpTransport`、`Clock`、`IdSource`
