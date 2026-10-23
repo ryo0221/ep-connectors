@@ -88,15 +88,16 @@ OAuth client typeにより使える方式が異なる。全環境でclient secre
 
 本書の手順は、[全体設計の3](../architecture.md#3-共通の差し口)の差し口の上に組む。
 
-| 本書の手順                                    | 使う差し口                                       | 段階  |
-| --------------------------------------------- | ------------------------------------------------ | ----- |
-| 2の再検証（権限・membership・接続・plan期限） | `HostPolicy`（各stepと各retryの送信直前）        | D2–D3 |
-| 2の公開枠とoperationのatomicなclaim           | `OperationLedger.claim`                          | D3    |
-| 3のreceiptと台帳の記録                        | `OperationLedger.appendAttempt` / `recordResult` | D3    |
-| 4.1の不確定な送信の照合、再起動後の再開       | `OperationLedger.listUnresolved`、`JobQueue`     | D3    |
-| 5の同期cursor                                 | `SyncStateStore`                                 | D2    |
-| 5の変更通知                                   | `WebhookIntake`                                  | D2    |
-| 6のOAuthと接続                                | `TokenStore`、`ConnectionKey`                    | D2    |
+| 本書の手順                                      | 使う差し口                                                                    | 段階  |
+| ----------------------------------------------- | ----------------------------------------------------------------------------- | ----- |
+| 2の再検証（権限・membership・接続・plan期限）   | `HostPolicy`（各stepと各retryの送信直前）                                     | D2–D3 |
+| 2の公開枠とoperationのatomicなclaim             | `OperationLedger.claim`（予定の公開枠）                                       | D3    |
+| 2の4（claimした計画だけを送信）、各stepの送信権 | `OperationLedger.acquireStep`とfencing token                                  | D3    |
+| 3のreceiptと台帳の記録                          | `OperationLedger.appendAttempt` / `recordResult`                              | D3    |
+| 4.1の不確定な送信の照合、再起動後の再開         | `OperationLedger.listUnresolved` / `acquireReconcile` / `release`、`JobQueue` | D3    |
+| 5の同期cursor                                   | `SyncStateStore`（cacheと基点の世代を一体で公開）                             | D2    |
+| 5の変更通知                                     | `WebhookIntake`                                                               | D2    |
+| 6のOAuthと接続                                  | `TokenStore`、`ConnectionKey`                                                 | D2    |
 
 EditorPlatformのHost port（`ScheduleReadPort` / `ScheduleEffectPort`）は、Hostがこれらの差し口の実装を渡して組み立てる。Provider adapterは`@ep-connectors/schedule/google`、`/microsoft`、`/zoom`のsubpathに置く。provider-notesの仮称`CalendarPort` / `ConferencePort`は、このパッケージの内部の境界とする。
 

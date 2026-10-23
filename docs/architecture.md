@@ -24,14 +24,14 @@ npm workspacesのmonorepoとし、scopeは`@ep-connectors`とする。公開方�
 | `@ep-connectors/schedule` | Google Calendar / Outlook、Google Meet / Teams / Zoom。設計は[docs/schedule/](schedule/README.md)                              |
 | `@ep-connectors/data`     | DB・表計算（Google Sheets / Excel オンライン）。設計前                                                                         |
 | `@ep-connectors/files`    | ファイルの保存先（Google Drive / OneDrive / SharePoint）。設計前                                                               |
-| `@ep-connectors/map`      | 地図の背景タイル、住所検索。設計前                                                                                             |
+| `@ep-connectors/map`      | 地理データの取得（OGC API Featuresなどのvector feature読取）、地図の背景タイル、住所検索。設計前                               |
 
 依存の規則は次のとおりとする。
 
 - 分野のパッケージは`core`にだけ依存する。分野どうしは直接依存しない。
 - Providerごとのadapterは分野のパッケージの中にsubpath exportとして置く（例: `@ep-connectors/schedule/google`）。Hostは使うProviderだけをimportする。
 - 同じProviderの共通部分（Google / MicrosoftのOAuth endpoint、error応答の解釈など）は、二つ目の分野が必要とした時点で`@ep-connectors/provider-google`のような共通パッケージへ切り出す。先回りして作らない。
-- EditorPlatformのpackageは現在privateのため、実行時の依存にしない。分野のパッケージはEditorPlatformのHost portを構造的に満たす型で実装し、EditorPlatformの特定commitに対する型の適合を試験で確かめる（[試験の設計](testing.md#4-editorplatformとの適合)）。
+- EditorPlatformのpackageは現在privateのため、実行時の依存にしない。分野のパッケージはEditorPlatformのHost portを構造的に満たす型で実装する。適合は、本リポジトリに固定した公開可能なport契約と、権限のあるCIでの実装の適合試験の二段で確かめる（[試験の設計](testing.md#4-editorplatformとの適合)）。
 
 言語はTypeScript、実行環境はEditorPlatformに合わせてNode 22.13以上または24、試験はvitestとする。
 
@@ -49,26 +49,45 @@ npm workspacesのmonorepoとし、scopeは`@ep-connectors`とする。公開方�
 
 ### 3.2 `TokenStore`
 
-| 操作                 | 意味                                                                                                                                                                                  |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `send(key, request)` | Adapterが組み立てたserializeできるHTTP要求（method、allowlist内のURL、header、body）に、Hostが現在有効なaccess tokenを付けて送り、serializeできる応答を返す。Tokenはadapterへ渡らない |
-| `refresh(key)`       | Refreshを行い、失効なら`revoked`を返す。同じkeyへの同時refreshはHost側の実装で一つにまとめる                                                                                          |
-| `revoke(key)`        | 接続を解除し、そのkeyに束縛された同期の基点も無効にする                                                                                                                               |
+| 操作                 | 意味                                                                                                                                                                                                                |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `send(key, request)` | Adapterが組み立てたserializeできるHTTP要求（操作名、method、URL、header、body）を3.2.1の境界で検査し、通ったものだけにHostが現在有効なaccess tokenを付けて送り、serializeできる応答を返す。Tokenはadapterへ渡らない |
+| `refresh(key)`       | Refreshを行い、失効なら`revoked`を返す。同じkeyへの同時refreshはHost側の実装で一つにまとめる                                                                                                                        |
+| `revoke(key)`        | 接続を解除し、そのkeyに束縛された同期の基点も無効にする                                                                                                                                                             |
 
-Tokenを使う処理をcallbackとして渡す形にはしない。差し口の引数をserializeできる値に限る規則（3の冒頭）を守り、HostがRPCやworkerの向こうに実装しても同じ意味で動かすためである。Tokenの付与と送信はHostの信頼境界の中で行い、Hostの実装も送信先をallowlistで再確認する。
+Tokenを使う処理をcallbackとして渡す形にはしない。差し口の引数をserializeできる値に限る規則（3の冒頭）を守り、HostがRPCやworkerの向こうに実装しても同じ意味で動かすためである。Tokenの付与と送信はHostの信頼境界の中で行う。
+
+#### 3.2.1 認証付き送信の境界
+
+Adapterがmethod・URL・header・bodyを組み立てるため、送信先のhost名だけを許可しても、想定外のendpointやredirect先へ接続の権限を使われる余地が残る。Hostの`send`の実装は、次をすべて満たすことを必須の契約とする。Adapterの申告を信じるのではなく、Hostの側で検査する。
+
+- **操作の目録で許可する。** Adapterは、Providerごとに使う操作の目録（操作名、method、許可するorigin、pathの型、必要なscope）を静的に宣言する。Hostは要求の操作名を目録と照合し、method・origin（scheme・host・portの完全一致）・pathが目録の型に合わない要求を送らない。目録はconnectionのscopeとも照合し、接続の同意にない操作を拒否する。
+- **認証付きのredirectを辿らない。** Hostは認証付き要求の3xxを自動で辿らず、tokenを付けずに応答としてadapterへ返す。Adapterが次の要求として送り直す場合も、新しいURLを同じ目録の検査に通す。別originへの付け替えでtokenを送ることはない。Providerが仕様として別originへ誘導する操作（署名付きのダウンロードURLなど）は、目録で「認証なし」として宣言し、`HttpTransport`の側で扱う。
+- **認証に関わるheaderをadapterに指定させない。** `Authorization`、`Cookie`、`Proxy-Authorization`、およびProviderが認証に使うheaderを要求に含めた場合は、上書きせずに要求ごと拒否する。Hostが付けるのは認証のheaderだけで、他のheaderは目録で許可したものに限る。
+- **応答とerrorに秘密情報を出さない。** 応答から`Set-Cookie`、`WWW-Authenticate`など認証に関わるheaderを除いて返す。Hostのerrorの文言・log・例外には、token、送信したheader、query中の資格情報を含めない。
+- **cursor・nextLinkのURLも同じ検査に通す。** Providerが返したURLをそのまま辿らず、目録の操作として検査する。
+
+本リポジトリは、目録の型と、Hostの実装がこの境界を満たすかを確かめる契約試験を提供する（[試験の設計](testing.md#1-差し口の契約試験)）。
 
 Raw token、authorization header、refresh tokenを、Editor向けDTO、操作台帳、log、errorの文言へ出さない。OAuthの同意画面とredirectの受け口はHostが持ち、本リポジトリは認可要求の組み立てと応答の検証（state、PKCE、issuer）だけを提供する。
 
 ### 3.3 `OperationLedger`
 
-外部に結果が残る操作（予定の作成、ファイルの書込みなど）の記録。D3の前提であり、読取だけの段階では使わない。
+外部に結果が残る操作（予定の作成、ファイルの書込みなど）の記録。W1（[段階と分野](roadmap.md)）の前提であり、読取だけの段階では使わない。
 
-| 操作                                    | 意味                                                                                                             |
-| --------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `claim(slot, operation, planDigest)`    | 公開枠とoperationをatomicに確保する。結果は`claimed` / `existing` / `conflict`。耐久保存が失敗したら送信しない   |
-| `appendAttempt(operation, attempt)`     | 送信の直前に、試行番号・送信予定のstep・重複抑止keyを追記する                                                    |
-| `recordResult(operation, step, result)` | 応答・外部IDのHost内参照・Provider request ID・読み戻しの結果を記録する                                          |
-| `listUnresolved()`                      | `dispatching` / `unknown`のまま残ったoperationを返す。再起動後はここから照合を始め、新しい送信を自動で発行しない |
+| 操作                                                    | 意味                                                                                                                                                                                                                     |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `claim(slot, operation, planDigest)`                    | 公開枠とoperationをatomicに確保する。結果は`claimed` / `existing` / `conflict`。耐久保存が失敗したら送信しない。stepの送信権は与えない                                                                                   |
+| `acquireStep(operation, step, expectedGeneration)`      | 一つのstepの送信権をatomicに得る。状態が`prepared`で世代が一致するときだけ`dispatching`へ遷移させ、新しい世代とfencing tokenを返す。それ以外は現在の状態（`dispatching` / `unknown` / 確定済み）を返し、送信権を与えない |
+| `appendAttempt(operation, attempt, fence)`              | 送信の直前に、試行番号・送信予定のstep・重複抑止keyを追記する。現在のfencing tokenでなければ拒否する                                                                                                                     |
+| `recordResult(operation, step, result, fence)`          | 応答・外部IDのHost内参照・Provider request ID・読み戻しの結果を記録する。古いfencing tokenからの記録は拒否する                                                                                                           |
+| `acquireReconcile(operation, step, expectedGeneration)` | `dispatching` / `unknown`のstepの照合権をatomicに得る。世代を進めて新しいfencing tokenを返し、それまでのtokenを無効にする。遅れて戻った古いworkerの記録はこれで拒否される                                                |
+| `release(operation, step, evidence, fence)`             | 照合権を持つworkerが、未送信を証明できたstepだけを、世代を進めて`prepared`へ戻す。証拠のない解放を拒否する                                                                                                               |
+| `listUnresolved()`                                      | `dispatching` / `unknown`のまま残ったoperationを返す。再起動後はここから照合を始め、新しい送信を自動で発行しない                                                                                                         |
+
+`claim`は同じ予定の多重公開を防ぎ、`acquireStep`は同じstepの多重送信を防ぐ。二つは別の保証であり、`claim`の結果が`existing`であることをstepの送信権の証明として扱わない。同じoperationのjobが二つのworkerへ重複して配送された場合も、`acquireStep`で送信権を得たworkerだけが`appendAttempt`と送信へ進む。送信権を得られなかったworkerは何も送らずに終わる。
+
+`dispatching`は「送信したかもしれない」状態である。送信権を持つworkerが応答を記録する前に止まった場合、再起動後も`dispatching`を未送信と決めつけない。`listUnresolved`から、`acquireReconcile`で照合権を得て照合を始め、既知のIDと重複抑止keyで外部の状態を確かめる。照合で未送信を証明できたときだけ、世代を進めて`prepared`へ戻す（`release`）。証明できなければ`unknown`へ遷移させ、新しい送信を発行しない。
 
 メモリ実装は試験専用とし、本番のHostへ「耐久性あり」と宣言させない。Step状態の意味はEditorPlatformの[Editor–Host契約の5](https://github.com/ryo0221/editor-platform/blob/main/docs/schedule/editor-host-contract.md#5-外部作用の状態とreceipt)に従う。
 
@@ -78,7 +97,7 @@ Raw token、authorization header、refresh tokenを、Editor向けDTO、操作�
 
 - `enqueue(job, notBefore)`で、serializeできるjobを預ける。Jobはoperation IDと次のstepだけを持ち、payloadの写しを持たない。送る内容は台帳の計画から読み直す。
 - Jobを実行する直前に、現在の権限・membership・connection・計画の期限を再確認する（`HostPolicy.authorizeDispatch`）。キューに入れた時点の判定を使い回さない。
-- 同じjobが二度実行されても安全にする。重複実行の抑止は台帳の`claim`で行い、キューの保証に頼らない。
+- 同じjobが二度実行されても安全にする。重複実行の抑止は台帳の`acquireStep`とfencing tokenで行い、キューの「一回だけ配送する」保証に頼らない。
 - SDK、HTTP client、proxyによる暗黙のretryは無効にし、retryはこの差し口だけで行う。
 
 ### 3.5 `WebhookIntake`
@@ -95,6 +114,9 @@ Providerからの変更通知の受け口。HTTPSの受信そのものはHostが
 
 - 基点は、ConnectionKey、対象（calendar、sheet、folderなど）、取得条件、固定した期間、baselineの世代に束縛して保管する。条件の違う基点を流用しない。
 - 全ページを取り終えるまで新しい基点をcommitしない。Baselineを失ったら残っている基点も無効にする。
+- 外部cacheと基点を別々に進めない。取得したページは新しい世代のstagingへ書き、全ページを適用してから、cacheの世代と基点を一つの操作で公開する（`commit(scope, expectedGeneration, stagedGeneration, cursor)`、世代のCAS）。読む側は公開済みの世代だけを見る。cacheの一部が未反映のまま基点だけが進む状態を作らない。
+- Hostがcacheと基点を同じ保管でatomicに更新できない場合は、復旧できる二段階の手順にする。先に「世代Nを公開する」意図を記録し、cacheの世代Nを書き終えてから基点を進め、最後に意図を完了にする。再起動時に完了していない意図があれば、stagingを捨てて公開済みの基点から読み直す。
+- 再起動の後は、公開済みの世代と基点からだけ再開する。Staging中だった世代は捨てる。
 - 外部cacheを作り直しても、台帳・未解決のoperation・Hostのbindingは消さない。
 
 ### 3.7 `HttpTransport`、`Clock`、`IdSource`
