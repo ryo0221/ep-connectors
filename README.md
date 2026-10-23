@@ -17,6 +17,7 @@ npm run check   # prettier、eslint、tsc、vitest
 | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [`@ep-connectors/core`](packages/core/src)       | `ConnectionKey`、`HostPolicy`、`TokenStore` / `HttpTransport`、`OperationLedger`、`JobQueue`、`WebhookIntake`、`SyncStateStore`、能力の宣言の型と、操作の目録の検査 |
 | [`@ep-connectors/testing`](packages/testing/src) | 各差し口のメモリ実装（試験専用）、偽の Provider、Host の実装にも流せる契約試験（`@ep-connectors/testing/contracts`）                                                |
+| [`@ep-connectors/map`](packages/map/src)         | Geo の vector feature 読取。`@ep-connectors/map/ogc-features` が OGC API Features の bbox 検索、ページング、CRS84 の検査、写しの公開を持つ                          |
 
 Host が自分の差し口の実装を確かめるときは、`@ep-connectors/testing/contracts` の `tokenStoreContract` などに実装を渡して vitest で流す。例は [memory.contract.test.ts](packages/testing/src/memory.contract.test.ts)。
 
@@ -28,6 +29,7 @@ Host が自分の差し口の実装を確かめるときは、`@ep-connectors/te
 - [段階と分野](docs/roadmap.md)
 - [Schedule 接続コンポーネントの設計](docs/schedule/README.md)と[Provider Notes](docs/schedule/provider-notes.md)
 - [GitHub 接続の設計](docs/github/README.md)
+- [Geo 接続の設計：vector feature の読取](docs/map/README.md)
 
 ## EditorPlatform との関係
 
