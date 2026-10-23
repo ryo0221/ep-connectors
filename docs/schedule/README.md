@@ -1,6 +1,6 @@
 # Schedule接続コンポーネントの設計（草案）
 
-**Proposed、版0.2、2026-10-20。未実装。配置先は未決定。** Google Calendar / Outlook、Google Meet / Teams / Zoomへの接続を実行する側の内部設計を置く。複数のHost（PaoBub製品版、EditorPlatformを組み込む利用者のアプリ）から使う独立したコンポーネントを想定する。ライブラリ、稼働するサービス、その両方のどれにするか、永続的な実行部分を担う基盤（[Common Runtime](https://github.com/ryo0221/common-runtime)への適合を含む）、運用主体は、D3の前に[G-CONNECTOR](https://github.com/ryo0221/editor-platform/blob/main/docs/schedule/README.md#実装前gate)で決める。決定するまでは、レビューのためにこのdirectoryへ仮に置く。
+**Proposed、版0.3、2026-10-23。未実装。** Google Calendar / Outlook、Google Meet / Teams / Zoomへの接続を実行する側の内部設計を置く。複数のHost（PaoBub製品版、EditorPlatformを組み込む利用者のアプリ）から使う`@ep-connectors/schedule`の設計である。版0.2まではEditorPlatformの`docs/schedule/connector/`に仮に置いていた。ライブラリとして作ることと置き場所は[ADR 001](../decisions/001-library-first-monorepo.md)で決める。永続的な実行部分を担う基盤（[Common Runtime](https://github.com/ryo0221/common-runtime)への適合を含む）と運用主体は、引き続きD3の前に[G-CONNECTOR](https://github.com/ryo0221/editor-platform/blob/main/docs/schedule/README.md#実装前gate)で決める。
 
 EditorとHostの間の約束（状態の意味、保存・Undoと送信の分離、私有情報の分離、保証する範囲）の正本は[Editor–Host契約](https://github.com/ryo0221/editor-platform/blob/main/docs/schedule/editor-host-contract.md)である。本書はその約束を満たす手順を定め、食い違う場合は契約を優先する。Providerの事実と未確認事項は[Provider Notes](provider-notes.md)にまとめる。
 
@@ -84,6 +84,22 @@ Microsoftのdeltaで`@removed(reason=deleted)`が返っても、元資源の削�
 
 OAuth client typeにより使える方式が異なる。全環境でclient secretを持てるとも、必要時のincremental authorizationが使えるとも仮定しない。System browser、PKCE、redirect / state / issuer検証、scope・同意、失効処理の実装はG-OAUTHで対象Hostに合わせて確認する。
 
-## 7. 検証
+## 7. 共通の差し口との対応
 
-接続コンポーネントで証明する観測は、[検証計画の観測層の割当](https://github.com/ryo0221/editor-platform/blob/main/docs/schedule/verification-plan.md#観測層の割当)の「接続」列に従う。シナリオIDはEditor側と共通とし、本書では新しいIDを作らない。シミュレーションでProviderの保証を立証せず、実接続の試験は別途許可した検証用アカウントと宛先で行う。
+本書の手順は、[全体設計の3](../architecture.md#3-共通の差し口)の差し口の上に組む。
+
+| 本書の手順                                    | 使う差し口                                       | 段階  |
+| --------------------------------------------- | ------------------------------------------------ | ----- |
+| 2の再検証（権限・membership・接続・plan期限） | `HostPolicy`（各stepと各retryの送信直前）        | D2–D3 |
+| 2の公開枠とoperationのatomicなclaim           | `OperationLedger.claim`                          | D3    |
+| 3のreceiptと台帳の記録                        | `OperationLedger.appendAttempt` / `recordResult` | D3    |
+| 4.1の不確定な送信の照合、再起動後の再開       | `OperationLedger.listUnresolved`、`JobQueue`     | D3    |
+| 5の同期cursor                                 | `SyncStateStore`                                 | D2    |
+| 5の変更通知                                   | `WebhookIntake`                                  | D2    |
+| 6のOAuthと接続                                | `TokenStore`、`ConnectionKey`                    | D2    |
+
+EditorPlatformのHost port（`ScheduleReadPort` / `ScheduleEffectPort`）は、Hostがこれらの差し口の実装を渡して組み立てる。Provider adapterは`@ep-connectors/schedule/google`、`/microsoft`、`/zoom`のsubpathに置く。provider-notesの仮称`CalendarPort` / `ConferencePort`は、このパッケージの内部の境界とする。
+
+## 8. 検証
+
+接続コンポーネントで証明する観測は、[検証計画の観測層の割当](https://github.com/ryo0221/editor-platform/blob/main/docs/schedule/verification-plan.md#観測層の割当)の「接続」列に従う。シナリオIDはEditor側と共通とし、本書では新しいIDを作らない。試験の層の分け方は[試験の設計](../testing.md)に従う。シミュレーションでProviderの保証を立証せず、実接続の試験は別途許可した検証用アカウントと宛先で行う。

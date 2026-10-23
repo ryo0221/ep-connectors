@@ -2,7 +2,7 @@
 
 **設計案・未実装**。確認日：2026-10-19。名称は提案。公式の事実・提案・未確認事項を区別する。実接続・外部書込試験は未実施。
 
-接続コンポーネント側の調査であり、[接続コンポーネントの設計](README.md)と同じく配置先は未決定である。Editorへは、ここで確認した能力と制約を[Editor–Host契約の能力宣言](https://github.com/ryo0221/editor-platform/blob/main/docs/schedule/editor-host-contract.md#21-能力を宣言する単位)の共通形式で伝える。下記の状態名・手順の提案と契約が食い違う場合は契約を優先する。
+接続コンポーネント側の調査であり、[接続コンポーネントの設計](README.md)とともに版0.2まではEditorPlatformに仮に置いていた。内容は移したときのまま（確認日2026-10-19）である。Editorへは、ここで確認した能力と制約を[Editor–Host契約の能力宣言](https://github.com/ryo0221/editor-platform/blob/main/docs/schedule/editor-host-contract.md#21-能力を宣言する単位)の共通形式で伝える。下記の状態名・手順の提案と契約が食い違う場合は契約を優先する。
 
 ## 1. 対象と接続の分離
 
