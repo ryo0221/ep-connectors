@@ -295,6 +295,33 @@ describe('Google Calendar read over the shared ports', () => {
     expect(await ledger.listUnresolved()).toEqual(unresolved);
   });
 
+  it('leaves a newer rebuild alone when its own 410 arrives late', async () => {
+    const t = setup();
+    t.google.put(CALENDAR, timed('a', 3));
+    await syncGoogleCalendar(t.deps(), t.scope);
+    t.google.put(CALENDAR, timed('b', 4));
+    t.google.expireSyncTokens();
+
+    // 遅い worker の差分の要求が 410 を受け取る前に、別の worker が作り直して公開する。
+    const slow = t.deps();
+    const tokens = slow.tokens;
+    let raced = false;
+    slow.tokens = Object.assign(Object.create(tokens) as typeof tokens, {
+      send: async (...args: Parameters<typeof tokens.send>) => {
+        const sent = await tokens.send(...args);
+        if (!raced) {
+          raced = true;
+          expect(await syncGoogleCalendar(t.deps(), t.scope)).toMatchObject({ mode: 'full' });
+        }
+        return sent;
+      },
+    });
+    expect(await syncGoogleCalendar(slow, t.scope)).toEqual({ kind: 'superseded' });
+    const read = await t.read();
+    expect(read.complete).toBe(true);
+    expect(titles(read)).toEqual(['a', 'b']);
+  });
+
   it('refreshes once on 401 and sends the same page again', async () => {
     const t = setup();
     t.google.put(CALENDAR, timed('a', 3));
@@ -427,6 +454,58 @@ describe('Google Calendar read over the shared ports', () => {
       title: 'Off<b>day</b>',
     });
     expect([...(event?.notes ?? '')]).toHaveLength(2001);
+  });
+
+  it.each([
+    ['Asia/Tokyo', '2026-11-03T10:00:00', '2026-11-03T01:00:00Z'],
+    ['America/New_York', '2026-11-03T10:00:00', '2026-11-03T15:00:00Z'],
+    ['America/New_York', '2026-10-31T10:00:00.250', '2026-10-31T14:00:00.250Z'],
+  ])('reads an offset-free time in %s as wall-clock time there', async (timeZone, local, utc) => {
+    const t = setup();
+    const end = new Date(Date.parse(utc) + 3_600_000).toISOString();
+    t.google.put(CALENDAR, {
+      id: 'zoned',
+      start: { dateTime: local, timeZone },
+      end: { dateTime: end },
+    });
+    await syncGoogleCalendar(
+      t.deps(),
+      googleCalendarScope({
+        connection: t.connection,
+        calendarId: CALENDAR,
+        window: { start: '2026-10-01T00:00:00Z', end: WINDOW.end },
+      }),
+    );
+    const read = await t.read(
+      googleCalendarScope({
+        connection: t.connection,
+        calendarId: CALENDAR,
+        window: { start: '2026-10-01T00:00:00Z', end: WINDOW.end },
+      }),
+      { from: Date.parse('2026-10-01T00:00:00Z'), to: RANGE.to },
+    );
+    expect(read.events[0]?.start).toBe(Date.parse(utc));
+  });
+
+  it('does not guess the zone of an offset-free time without a known time zone', async () => {
+    const t = setup();
+    t.google.put(CALENDAR, timed('a', 3));
+    t.google.inject(
+      json(200, {
+        items: [
+          {
+            id: 'x',
+            start: { dateTime: '2026-11-03T10:00:00', timeZone: 'Mars/Olympus' },
+            end: { dateTime: '2026-11-03T11:00:00Z' },
+          },
+        ],
+        nextSyncToken: 'sync-9',
+      }),
+    );
+    expect(await syncGoogleCalendar(t.deps(), t.scope)).toEqual({
+      kind: 'failed',
+      reason: 'malformed-response',
+    });
   });
 
   it('stops on a response it cannot read instead of publishing part of it', async () => {

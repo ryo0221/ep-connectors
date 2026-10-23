@@ -6,7 +6,7 @@ export interface FakeEvent {
   id: string;
   summary?: string;
   description?: string;
-  start: { dateTime: string } | { date: string };
+  start: { dateTime: string; timeZone?: string } | { date: string };
   end: { dateTime: string } | { date: string };
 }
 

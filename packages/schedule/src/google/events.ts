@@ -98,12 +98,12 @@ function toCachedEvent(item: Record<string, unknown>): CachedGoogleEvent | null 
 function toTime(value: unknown): GoogleTime | null {
   if (!isObject(value)) return null;
   if (typeof value.date === 'string') return DATE.test(value.date) ? { date: value.date } : null;
-  if (typeof value.dateTime === 'string' && !Number.isNaN(Date.parse(value.dateTime))) {
-    return typeof value.timeZone === 'string'
+  if (typeof value.dateTime !== 'string') return null;
+  const time: GoogleTime =
+    typeof value.timeZone === 'string'
       ? { dateTime: value.dateTime, timeZone: value.timeZone }
       : { dateTime: value.dateTime };
-  }
-  return null;
+  return timeValue(time) === null ? null : time;
 }
 
 /** 予定の範囲（epoch ms）。終日の予定は UTC の 0 時に置く。 */
@@ -115,8 +115,60 @@ export function eventSpan(event: CachedGoogleEvent): { start: number; end: numbe
 }
 
 function timeValue(time: GoogleTime): number | null {
-  const value = 'date' in time ? Date.parse(`${time.date}T00:00:00Z`) : Date.parse(time.dateTime);
-  return Number.isNaN(value) ? null : value;
+  if ('date' in time) return finite(Date.parse(`${time.date}T00:00:00Z`));
+  if (OFFSET.test(time.dateTime)) return finite(Date.parse(time.dateTime));
+  // Offset のない `dateTime` は `timeZone` の壁時計の時刻である。実行環境の timezone で読まない。
+  return time.timeZone === undefined ? null : zonedTime(time.dateTime, time.timeZone);
+}
+
+const OFFSET = /(?:Z|[+-]\d{2}:\d{2})$/i;
+const LOCAL = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3})\d*)?)?$/;
+
+/**
+ * IANA timezone の壁時計の時刻を epoch ms にする。DST で存在しない時刻・二重になる時刻は、
+ * 前後の offset のどちらかに寄せる（表示のための読取であり、書込みには使わない）。
+ */
+function zonedTime(local: string, timeZone: string): number | null {
+  const match = LOCAL.exec(local);
+  if (!match) return null;
+  const [, y, mo, d, h, mi, sec = '0', ms = '0'] = match;
+  const wall = Date.UTC(+y!, +mo! - 1, +d!, +h!, +mi!, +sec, +ms.padEnd(3, '0'));
+  let formatter: Intl.DateTimeFormat;
+  try {
+    formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      hourCycle: 'h23',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+  } catch {
+    return null;
+  }
+  const offsetAt = (instant: number): number => {
+    const parts = Object.fromEntries(
+      formatter.formatToParts(instant).map((part) => [part.type, part.value]),
+    );
+    const asUtc = Date.UTC(
+      +parts.year!,
+      +parts.month! - 1,
+      +parts.day!,
+      +parts.hour!,
+      +parts.minute!,
+      +parts.second!,
+    );
+    // 書式は秒までなので、比べる時刻も秒に切り捨てる。
+    return asUtc - Math.floor(instant / 1000) * 1000;
+  };
+  const first = wall - offsetAt(wall);
+  return finite(wall - offsetAt(first));
+}
+
+function finite(value: number): number | null {
+  return Number.isFinite(value) ? value : null;
 }
 
 /** Cache の値を予定として読む。自分で書いた値だが、保管は Host のものなので形を確かめる。 */
