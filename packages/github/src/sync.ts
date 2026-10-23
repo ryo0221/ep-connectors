@@ -102,6 +102,7 @@ export async function syncWorkItems(
   const watermark = mode.kind === 'delta' ? mode.cursor.watermark : null;
   let repository = cursor?.repository ?? { id: repositoryId, nameWithOwner: '' };
   let newest = watermark;
+  let scanStart: number | null = null;
   let fetched = 0;
 
   for (const kind of ['issue', 'pullRequest'] as const) {
@@ -116,15 +117,20 @@ export async function syncWorkItems(
         return page.outcome;
       }
       repository = page.repository;
+      // 走査の始まりの時刻（GitHub の Date header、なければ Clock）。走査の途中で更新された item は
+      // 読んだページの先頭へ移って読み落とすことがあるため、基点をこの時刻より先へ進めない。
+      scanStart ??= page.serverTime ?? Date.parse(now);
       let reachedBase = false;
       const upserts = [];
       for (const item of page.items) {
-        if (watermark !== null && item.updatedAt < watermark) {
+        if (watermark !== null && Date.parse(item.updatedAt) < Date.parse(watermark)) {
           reachedBase = true;
           break;
         }
         fetched += 1;
-        if (newest === null || item.updatedAt > newest) newest = item.updatedAt;
+        if (newest === null || Date.parse(item.updatedAt) > Date.parse(newest)) {
+          newest = item.updatedAt;
+        }
         upserts.push({ id: item.id, value: item });
       }
       const applied = await deps.sync.applyPage(scope, staged.stagedGeneration, {
@@ -132,7 +138,7 @@ export async function syncWorkItems(
         removals: [],
       });
       if (!applied.ok) return { kind: 'superseded', current: null };
-      if (reachedBase || !page.hasNextPage || page.endCursor === null) break;
+      if (reachedBase || !page.hasNextPage) break;
       after = page.endCursor;
     }
   }
@@ -141,7 +147,10 @@ export async function syncWorkItems(
     version: 1,
     repository,
     etag,
-    watermark: newest,
+    watermark:
+      newest !== null && scanStart !== null && Date.parse(newest) > scanStart
+        ? new Date(scanStart).toISOString()
+        : newest,
     fullReconciledAt: mode.kind === 'full' ? now : mode.cursor.fullReconciledAt,
     fetchedAt: now,
   };
@@ -207,6 +216,8 @@ type Page =
       items: GithubWorkItem[];
       endCursor: string | null;
       hasNextPage: boolean;
+      /** 応答の Date header の時刻（epoch ms）。 */
+      serverTime: number | null;
     }
   | { kind: 'outcome'; outcome: SyncOutcome };
 
@@ -265,7 +276,8 @@ async function fetchPage(
     if (!page) return fail({ kind: 'unavailable', reason: 'not-found' });
     if (page.repository.id !== repositoryId)
       return fail({ kind: 'unavailable', reason: 'malformed' });
-    return { kind: 'page', ...page };
+    const date = Date.parse(response.headers.date ?? '');
+    return { kind: 'page', ...page, serverTime: Number.isNaN(date) ? null : date };
   } catch (error) {
     if (error instanceof MalformedResponse)
       return fail({ kind: 'unavailable', reason: 'malformed' });
@@ -299,7 +311,7 @@ function httpFailure(response: HttpResponse, clock: Clock, retryDelayMs: number)
 
 /**
  * Rate limit の待機の終わり。`Retry-After`（秒）を優先し、残量が 0 なら `x-ratelimit-reset`
- * （epoch 秒）まで待つ。Rate limit でなければ `null`。
+ * （epoch 秒）まで待つ。どちらもない secondary rate limit は 1 分待つ。Rate limit でなければ `null`。
  */
 function rateLimitTime(response: HttpResponse, clock: Clock): string | null {
   const retryAfter = response.headers['retry-after'];
@@ -308,7 +320,8 @@ function rateLimitTime(response: HttpResponse, clock: Clock): string | null {
   const limited =
     response.status === 429 ||
     ((response.status === 403 || response.status === 200) &&
-      (retryAfter !== undefined || remaining === '0'));
+      (retryAfter !== undefined || remaining === '0')) ||
+    (response.status === 403 && /rate limit/i.test(response.body));
   if (!limited) return null;
   const now = Date.parse(clock.now());
   if (retryAfter !== undefined && /^\d+$/.test(retryAfter)) {

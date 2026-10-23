@@ -41,6 +41,8 @@ export class FakeGithub {
   readonly provider = new FakeProvider();
   readonly repositories = new Map<string, FakeRepository>();
   private readonly overrides: Override[] = [];
+  /** GraphQL の要求を処理する直前に呼ぶ。走査の途中の更新を再現する。 */
+  beforeGraphql: ((request: ReceivedRequest) => void) | null = null;
 
   constructor() {
     this.provider
@@ -91,6 +93,7 @@ export class FakeGithub {
   private graphql(request: ReceivedRequest): HttpResponse {
     const overridden = this.override(request);
     if (overridden) return overridden;
+    this.beforeGraphql?.(request);
     const body = JSON.parse(request.body ?? '{}') as {
       query: string;
       variables: { repositoryId: string; first: number; after?: string | null };

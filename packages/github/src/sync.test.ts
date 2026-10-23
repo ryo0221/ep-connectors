@@ -139,6 +139,29 @@ describe('change detection with the ETag', () => {
     expect(result.items).toHaveLength(7);
   });
 
+  it('does not move the base past an update made while the scan was running', async () => {
+    const { deps, scope, read, repository, github, clock } = await arrange();
+    // 走査は 2026-10-23T00:00:00Z に始まる。Issue のページを読んだ後に、Issue と Pull Request が
+    // 走査の開始より後の時刻で更新され、Pull Request の更新だけが読まれる。
+    const scanStart = clock.now();
+    const after = (seconds: number) =>
+      new Date(Date.parse(scanStart) + seconds * 1000).toISOString();
+    github.beforeGraphql = (request) => {
+      if (!request.body?.includes('pullRequests(')) return;
+      const target = repository.items.find((item) => item.id === 'I_1') as FakeItem;
+      target.title = 'edited during the scan';
+      target.updatedAt = after(1);
+      (repository.items.find((item) => item.id === 'PR_3') as FakeItem).updatedAt = after(2);
+      github.beforeGraphql = null;
+    };
+    await syncWorkItems(deps(), scope);
+    clock.advance(60_000);
+    expect(await syncWorkItems(deps(), scope)).toMatchObject({ kind: 'published', mode: 'delta' });
+    const result = await read();
+    if (!result.ok) throw new Error(result.reason);
+    expect(result.items.find((item) => item.id === 'I_1')?.title).toBe('edited during the scan');
+  });
+
   it('drops deleted or transferred items at the periodic full reconciliation, not in a delta', async () => {
     const { deps, scope, read, repository, clock } = await arrange({
       fullReconcileIntervalMs: 60 * 60 * 1000,
@@ -226,6 +249,45 @@ describe('incomplete reads', () => {
       handler: createGithubReadHandler(deps()),
     });
     expect(queueBacking.jobs[0]).toMatchObject({ status: 'pending', notBefore: RESET });
+  });
+
+  it('waits a minute on a secondary rate limit without Retry-After', async () => {
+    const { deps, scope, github } = await arrange();
+    github.failNext('graphql', {
+      status: 403,
+      headers: { 'x-ratelimit-remaining': '4999' },
+      body: '{"message":"You have exceeded a secondary rate limit."}',
+    });
+    expect(await syncWorkItems(deps(), scope)).toEqual({
+      kind: 'incomplete',
+      reason: 'rate-limited',
+      notBefore: '2026-10-23T00:01:00.000Z',
+    });
+  });
+
+  it('does not publish a page that announces a next page without a cursor', async () => {
+    const { deps, scope, read, github, clock } = await arrange();
+    await syncWorkItems(deps(), scope);
+    const before = await read();
+    clock.advance(6 * 60 * 60 * 1000);
+    github.failNext('graphql', {
+      status: 200,
+      headers: {},
+      body: JSON.stringify({
+        data: {
+          node: {
+            id: 'R_a',
+            nameWithOwner: 'acme/app',
+            issues: { pageInfo: { hasNextPage: true, endCursor: null }, nodes: [] },
+          },
+        },
+      }),
+    });
+    expect(await syncWorkItems(deps(), scope)).toEqual({
+      kind: 'unavailable',
+      reason: 'malformed',
+    });
+    expect(await read()).toEqual(before);
   });
 
   it('publishes nothing when a node has a shape it does not know', async () => {

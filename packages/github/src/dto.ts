@@ -228,10 +228,13 @@ export function parseWorkItemsPage(
   if (!Array.isArray(list.nodes) || typeof pageInfo.hasNextPage !== 'boolean') {
     throw new MalformedResponse('expected a page');
   }
+  const endCursor = optional(pageInfo.endCursor, text);
+  // 次のページがあるのに cursor がなければ、残りを読めない。全件として公開しない。
+  if (pageInfo.hasNextPage && !endCursor) throw new MalformedResponse('missing endCursor');
   return {
     repository: { id: text(repository.id), nameWithOwner: text(repository.nameWithOwner) },
     items: list.nodes.map((node) => parseWorkItem(kind, node)),
-    endCursor: optional(pageInfo.endCursor, text),
+    endCursor,
     hasNextPage: pageInfo.hasNextPage,
   };
 }
