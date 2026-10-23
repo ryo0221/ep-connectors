@@ -1,6 +1,6 @@
 # ep-connectors 全体設計
 
-**Proposed、版0.1、2026-10-23。未実装。** パッケージの構成、共通の差し口（port）、Hostとの責務の分け方を定める。決定の経緯は[ADR 001](decisions/001-library-first-monorepo.md)、試験の方針は[試験の設計](testing.md)、進める順番は[段階と分野](roadmap.md)を参照する。型名・関数名はすべて提案であり、まだexportされているAPIではない。
+**Proposed、版0.2、2026-10-23。差し口の型は`@ep-connectors/core`に実装した（C0）。** パッケージの構成、共通の差し口（port）、Hostとの責務の分け方を定める。決定の経緯は[ADR 001](decisions/001-library-first-monorepo.md)、試験の方針は[試験の設計](testing.md)、進める順番は[段階と分野](roadmap.md)を参照する。差し口の型名・関数名は`@ep-connectors/core`のexportと一致させる。公開（version 1.0）までは互換を保証しない。
 
 ## 1. 責務の配置
 
@@ -125,6 +125,7 @@ Providerからの変更通知の受け口。HTTPSの受信そのものはHostが
 
 - 基点は、ConnectionKey、対象（calendar、sheet、folderなど）、取得条件、固定した期間、baselineの世代に束縛して保管する。条件の違う基点を流用しない。
 - 全ページを取り終えるまで新しい基点をcommitしない。Baselineを失ったら残っている基点も無効にする。
+- 操作は`read`（公開済みの世代・基点・cacheだけを返す）、`stage(scope, basedOn)`（公開済みの世代を基にした差分か、`null`でbaselineからの作り直し）、`applyPage`、`commit`、`invalidate`、`invalidateConnection`（`TokenStore.revoke`が使う）とする。
 - 外部cacheと基点を別々に進めない。取得したページは新しい世代のstagingへ書き、全ページを適用してから、cacheの世代と基点を一つの操作で公開する（`commit(scope, expectedGeneration, stagedGeneration, cursor)`、世代のCAS）。読む側は公開済みの世代だけを見る。cacheの一部が未反映のまま基点だけが進む状態を作らない。
 - Hostがcacheと基点を同じ保管でatomicに更新できない場合も、公開の印を一つの記録としてatomicに書く。公開の印は「どの世代のcacheと、どの基点の組が公開済みか」を持つ唯一の記録であり、基点は印の中にだけ保管して、別の場所で先に進めない。手順は、cacheの世代Nを書き終えてから、印を（N、新しい基点）へCASで書き換える、の二段とする。印の書き換えがcommitであり、その前に止まれば印は前の組を指したまま、その後に止まれば新しい組を指す。どちらでも、cacheと基点の世代は一致する。
 - 再起動の後は、印（または同じ保管でのcommit）が指す世代と基点からだけ再開する。印が指していない世代のstagingだけを捨てる。印が指している世代は、書き終えたものとして保持する。

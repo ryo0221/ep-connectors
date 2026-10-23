@@ -1,0 +1,143 @@
+import { describe, expect, it } from 'vitest';
+import type { OperationCatalog } from './catalog.js';
+import { checkCatalogRequest, graphqlDocumentHash } from './catalog.js';
+
+const LIST_ISSUES = `
+  # 一覧の読取
+  query ListIssues($owner: String!, $name: String!, $first: Int!, $after: String) {
+    repository(owner: $owner, name: $name) {
+      issues(first: $first, after: $after) { nodes { id title } }
+    }
+  }
+`;
+
+async function githubCatalog(): Promise<OperationCatalog> {
+  return {
+    provider: 'github',
+    operations: [
+      {
+        name: 'issues.list',
+        method: 'POST',
+        origin: 'https://api.github.com',
+        path: '/graphql',
+        headers: ['content-type'],
+        scopes: ['issues:read'],
+        auth: 'token',
+        graphql: {
+          documentHash: await graphqlDocumentHash(LIST_ISSUES),
+          kind: 'query',
+          variables: {
+            owner: { type: 'string', required: true },
+            name: { type: 'string', required: true },
+            first: { type: 'int', required: true, max: 100 },
+            after: { type: 'string', pattern: '^[A-Za-z0-9+/=]+$' },
+          },
+        },
+      },
+    ],
+  };
+}
+
+async function check(body: unknown) {
+  return checkCatalogRequest({
+    catalog: await githubCatalog(),
+    auth: 'token',
+    grantedScopes: ['issues:read'],
+    request: {
+      operation: 'issues.list',
+      method: 'POST',
+      url: 'https://api.github.com/graphql',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    },
+  });
+}
+
+const variables = { owner: 'ryo0221', name: 'ep-connectors', first: 20 };
+
+describe('GraphQL operations in the catalog', () => {
+  it('accepts the registered document regardless of whitespace and comments', async () => {
+    const reformatted = LIST_ISSUES.replace('# 一覧の読取', '').replace(/\s+/g, '  ');
+    expect((await check({ query: reformatted, variables, operationName: 'ListIssues' })).ok).toBe(
+      true,
+    );
+  });
+
+  it.each([
+    ['an extra field', LIST_ISSUES.replace('id title', 'id title body')],
+    ['an alias', LIST_ISSUES.replace('issues(', 'all: issues(')],
+    [
+      'a mutation under the same name',
+      LIST_ISSUES.replace('query ListIssues', 'mutation ListIssues'),
+    ],
+  ])('rejects a document with %s under the same operationName', async (_label, query) => {
+    expect(await check({ query, variables, operationName: 'ListIssues' })).toMatchObject({
+      ok: false,
+      reason: 'graphql-document',
+    });
+  });
+
+  it.each([
+    ['a missing required variable', { owner: 'ryo0221', first: 20 }],
+    ['an unknown variable', { ...variables, extra: 'x' }],
+    ['a count over the limit', { ...variables, first: 101 }],
+    ['a wrong type', { ...variables, first: '20' }],
+    ['a cursor of the wrong form', { ...variables, after: '"}injected' }],
+  ])('rejects %s', async (_label, vars) => {
+    expect(await check({ query: LIST_ISSUES, variables: vars })).toMatchObject({
+      ok: false,
+      reason: 'graphql-variables',
+    });
+  });
+
+  it('rejects extra top-level keys in the body', async () => {
+    expect(await check({ query: LIST_ISSUES, variables, extensions: {} })).toMatchObject({
+      ok: false,
+      reason: 'graphql-document',
+    });
+  });
+});
+
+describe('path and origin matching', () => {
+  const catalog: OperationCatalog = {
+    provider: 'google',
+    operations: [
+      {
+        name: 'events.list',
+        method: 'GET',
+        origin: 'https://www.googleapis.com',
+        path: '/calendar/v3/calendars/{calendarId}/events',
+        query: ['pageToken', 'syncToken', 'timeMin', 'timeMax'],
+        scopes: ['calendar.readonly'],
+        auth: 'token',
+      },
+    ],
+  };
+  const run = (url: string) =>
+    checkCatalogRequest({
+      catalog,
+      auth: 'token',
+      grantedScopes: ['calendar.readonly'],
+      request: { operation: 'events.list', method: 'GET', url },
+    });
+
+  it('accepts an encoded calendar ID in one segment', async () => {
+    expect(
+      (
+        await run(
+          'https://www.googleapis.com/calendar/v3/calendars/a%40example.com/events?pageToken=x',
+        )
+      ).ok,
+    ).toBe(true);
+  });
+
+  it.each([
+    'https://www.googleapis.com.evil.test/calendar/v3/calendars/a/events',
+    'https://www.googleapis.com/calendar/v3/calendars/a/events#fragment',
+    'https://www.googleapis.com/calendar/v3/calendars//events',
+    'https://www.googleapis.com/calendar/v3/calendars/a/b/events',
+    'https://www.googleapis.com/calendar/v3/calendars/%E0%A4%A/events',
+  ])('rejects %s', async (url) => {
+    expect((await run(url)).ok).toBe(false);
+  });
+});
