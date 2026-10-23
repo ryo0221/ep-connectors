@@ -49,11 +49,13 @@ npm workspacesのmonorepoとし、scopeは`@ep-connectors`とする。公開方�
 
 ### 3.2 `TokenStore`
 
-| 操作           | 意味                                                                                                |
-| -------------- | --------------------------------------------------------------------------------------------------- |
-| `use(key, fn)` | 現在有効なaccess tokenでだけ`fn`を実行する。Tokenを呼出し元へ返さず、`fn`の外へ持ち出せない形で渡す |
-| `refresh(key)` | Refreshを行い、失効なら`revoked`を返す。同じkeyへの同時refreshはHost側の実装で一つにまとめる        |
-| `revoke(key)`  | 接続を解除し、そのkeyに束縛された同期の基点も無効にする                                             |
+| 操作                 | 意味                                                                                                                                                                                  |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `send(key, request)` | Adapterが組み立てたserializeできるHTTP要求（method、allowlist内のURL、header、body）に、Hostが現在有効なaccess tokenを付けて送り、serializeできる応答を返す。Tokenはadapterへ渡らない |
+| `refresh(key)`       | Refreshを行い、失効なら`revoked`を返す。同じkeyへの同時refreshはHost側の実装で一つにまとめる                                                                                          |
+| `revoke(key)`        | 接続を解除し、そのkeyに束縛された同期の基点も無効にする                                                                                                                               |
+
+Tokenを使う処理をcallbackとして渡す形にはしない。差し口の引数をserializeできる値に限る規則（3の冒頭）を守り、HostがRPCやworkerの向こうに実装しても同じ意味で動かすためである。Tokenの付与と送信はHostの信頼境界の中で行い、Hostの実装も送信先をallowlistで再確認する。
 
 Raw token、authorization header、refresh tokenを、Editor向けDTO、操作台帳、log、errorの文言へ出さない。OAuthの同意画面とredirectの受け口はHostが持ち、本リポジトリは認可要求の組み立てと応答の検証（state、PKCE、issuer）だけを提供する。
 
@@ -97,7 +99,7 @@ Providerからの変更通知の受け口。HTTPSの受信そのものはHostが
 
 ### 3.7 `HttpTransport`、`Clock`、`IdSource`
 
-- `HttpTransport`はfetchと同じ形の関数を受け取る。通信先はadapterごとのallowlistに固定し、redirect先・cursorに含まれるURLもallowlistで検証する。
+- `HttpTransport`は認証の要らない通信（公開の地図タイルなど）にだけ使い、`TokenStore.send`と同じserializeできる要求・応答の形にする。通信先はadapterごとのallowlistに固定し、redirect先・cursorに含まれるURLもallowlistで検証する。
 - `Clock`と`IdSource`は外から渡す。期限、待機、重複抑止keyを試験で決定的にするためである。
 
 ## 4. 能力の宣言

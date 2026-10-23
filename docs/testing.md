@@ -6,19 +6,19 @@
 
 `@ep-connectors/testing`は、[全体設計の3](architecture.md#3-共通の差し口)の差し口ごとに契約試験を持つ。試験は実装を受け取る関数としてexportし、メモリ実装もHostの本番実装も同じ試験を通す。
 
-| 差し口            | 契約試験で確かめること                                                                                                   |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `TokenStore`      | Tokenが`use`の外へ出ない。同時refreshが一つにまとまる。`revoke`後は`use`が失敗し、同期の基点も無効になる                 |
-| `OperationLedger` | 同じslotへの同時`claim`で`claimed`は一つだけ。同じoperationで違うdigestは`conflict`。再起動の後も`listUnresolved`に残る  |
-| `JobQueue`        | 同じjobの二重実行で外部への送信が一回になる（台帳と組み合わせて確かめる）。実行の直前に毎回`authorizeDispatch`が呼ばれる |
-| `WebhookIntake`   | 署名・tokenの不一致を拒否する。通知の本文を変更内容として返さない                                                        |
-| `SyncStateStore`  | 条件の違う基点を返さない。途中のページで止めた基点をcommitしない。Baselineを失うと基点も無効になる                       |
+| 差し口            | 契約試験で確かめること                                                                                                                                        |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `TokenStore`      | 応答にtokenやauthorization headerが含まれない。Allowlist外の送信先を拒否する。同時refreshが一つにまとまる。`revoke`後は`send`が失敗し、同期の基点も無効になる |
+| `OperationLedger` | 同じslotへの同時`claim`で`claimed`は一つだけ。同じoperationで違うdigestは`conflict`。再起動の後も`listUnresolved`に残る                                       |
+| `JobQueue`        | 同じjobの二重実行で外部への送信が一回になる（台帳と組み合わせて確かめる）。実行の直前に毎回`authorizeDispatch`が呼ばれる                                      |
+| `WebhookIntake`   | 署名・tokenの不一致を拒否する。通知の本文を変更内容として返さない                                                                                             |
+| `SyncStateStore`  | 条件の違う基点を返さない。途中のページで止めた基点をcommitしない。Baselineを失うと基点も無効になる                                                            |
 
 「同一プロセス・メモリ上の状態を前提にしない」ことは、契約試験の中で呼出しごとに新しいinstanceを作り、保管だけを共有して確かめる。
 
 ## 2. 偽のProviderを使うadapterの試験
 
-`HttpTransport`を偽のProviderに差し替え、`Clock`と`IdSource`を固定して、決定的に試験する。偽のProviderは公式の仕様と[Provider Notes](schedule/provider-notes.md)で確認した事実だけを再現し、確認できていない保証（Graphの条件付き更新、Zoom createの重複抑止など）は「保証しない」側で振る舞わせる。
+`TokenStore.send`と`HttpTransport`の送信先を偽のProviderに差し替え、`Clock`と`IdSource`を固定して、決定的に試験する。偽のProviderは公式の仕様と[Provider Notes](schedule/provider-notes.md)で確認した事実だけを再現し、確認できていない保証（Graphの条件付き更新、Zoom createの重複抑止など）は「保証しない」側で振る舞わせる。
 
 試験の対象は手順である。例として、Scheduleでは次を試験する。
 
