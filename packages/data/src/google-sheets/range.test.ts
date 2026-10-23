@@ -52,14 +52,16 @@ class FakeSheets {
   token = 'access-1';
   spreadsheets = new Map<string, Map<string, FakeRange>>();
   /** 次の応答を差し替える。 */
-  override: ((request: ReceivedRequest) => HttpResponse | undefined) | null = null;
+  override:
+    | ((request: ReceivedRequest) => HttpResponse | undefined | Promise<HttpResponse | undefined>)
+    | null = null;
 
   constructor() {
     this.provider.route(
       'GET',
       `${SHEETS_ORIGIN}/v4/spreadsheets/{spreadsheetId}/values:batchGet`,
-      (request, params) => {
-        const overridden = this.override?.(request);
+      async (request, params) => {
+        const overridden = await this.override?.(request);
         if (overridden) return overridden;
         if (request.headers.authorization !== `Bearer ${this.token}`) {
           return json(401, { error: { code: 401, status: 'UNAUTHENTICATED' } });
@@ -241,6 +243,44 @@ describe('Google Sheets range read', () => {
     expect(state?.published?.generation).toBe(read?.generation);
   });
 
+  it('does not publish a second generation for a delayed duplicate of a read job', async () => {
+    const { sheets, deps, syncState } = arrange();
+    // 先に届いた配送が公開した後で、同じ job（期待する世代は null）の配送が遅れて走る。
+    expect(await syncSheetsRange(deps(), scope, { expectedGeneration: null })).toMatchObject({
+      kind: 'published',
+    });
+    const first = await readSheetsRange(syncState(), scope);
+    sheets.set(SPREADSHEET, RANGE, { resolved: RANGE, values: [['changed']] });
+    expect(
+      await sheetsReadJobHandler(deps())({ kind: 'read', scope, expectedGeneration: null }),
+    ).toEqual({ kind: 'done' });
+    expect(await readSheetsRange(syncState(), scope)).toEqual(first);
+    expect(sheets.received).toHaveLength(1);
+  });
+
+  it('does not publish values fetched while the connection was revoked', async () => {
+    const { sheets, deps, syncState } = arrange();
+    // 初回の取得の送信中に接続が解除される。
+    sheets.override = async () => {
+      expect(await deps().tokens.revoke(connection)).toEqual({ ok: true });
+      return undefined;
+    };
+    expect(await syncSheetsRange(deps(), scope)).toMatchObject({ kind: 'retry' });
+    expect(await readSheetsRange(syncState(), scope)).toBeNull();
+  });
+
+  it('does not keep values fetched while the connection was revoked over a published copy', async () => {
+    const { sheets, deps, syncState } = arrange();
+    await syncSheetsRange(deps(), scope);
+    sheets.set(SPREADSHEET, RANGE, { resolved: RANGE, values: [['changed']] });
+    sheets.override = async () => {
+      await deps().tokens.revoke(connection);
+      return undefined;
+    };
+    expect(await syncSheetsRange(deps(), scope)).toEqual({ kind: 'superseded' });
+    expect(await readSheetsRange(syncState(), scope)).toBeNull();
+  });
+
   it('does not run a read job whose dispatch is denied', async () => {
     const { deps, sheets, policy } = arrange();
     const queue = createQueueBacking();
@@ -327,6 +367,7 @@ describe('Google Sheets range read', () => {
 
   it.each([
     ['429 with Retry-After', json(429, {}, { 'retry-after': '120' }), 'rate-limited', 120],
+    ['429 with a long Retry-After', json(429, {}, { 'retry-after': '7200' }), 'rate-limited', 7200],
     ['429 without Retry-After', json(429, {}), 'rate-limited', 30],
     ['503', json(503, {}), 'unavailable', 30],
   ] as const)(

@@ -103,6 +103,14 @@ export function parseSheetsScope(scope: SyncScope): Required<SheetsRangeTarget> 
   return target;
 }
 
+export interface SheetsSyncOptions {
+  /**
+   * 公開済みの世代がこれのときだけ公開する（`read` job の `expectedGeneration`）。省略したら
+   * 取得を始めた時点の公開済みの世代を使う。
+   */
+  expectedGeneration?: number | null;
+}
+
 /**
  * 範囲を取得し、内容が変わっていれば新しい世代として公開する（Data 接続の設計 3）。
  *
@@ -113,11 +121,20 @@ export function parseSheetsScope(scope: SyncScope): Required<SheetsRangeTarget> 
 export async function syncSheetsRange(
   deps: SheetsReadDeps,
   scope: SyncScope,
+  options: SheetsSyncOptions = {},
 ): Promise<SheetsSyncResult> {
   const target = parseSheetsScope(scope);
   if (!target) return { kind: 'failed', reason: 'invalid-target' };
   const published = await deps.syncState.read(scope);
-  const expected = published?.generation ?? null;
+  const current = published?.generation ?? null;
+  const expected = options.expectedGeneration === undefined ? current : options.expectedGeneration;
+  // 期待した世代より後の世代が公開済みなら、この取得は別の取得に追い越されている。
+  if (current !== expected) return { kind: 'superseded' };
+
+  // 公開済みの世代がないときは、送る前に staging を作っておく。送信中に `revoke` で接続の写しが
+  // 無効になると staging も消え、取得した値を公開できなくなる。公開済みの世代があるときは、
+  // 無効化で `commit` の世代の CAS が通らなくなる。
+  let staged = expected === null ? await deps.syncState.stage(scope, null) : null;
 
   const sent = await sendWithRefresh(deps, scope.connection, buildRequest(target));
   if (sent.kind !== 'response') return sent.result;
@@ -140,7 +157,7 @@ export async function syncSheetsRange(
     return { kind: 'unchanged', generation: published.generation };
   }
 
-  const staged = await deps.syncState.stage(scope, null);
+  staged ??= await deps.syncState.stage(scope, null);
   if (!staged.ok) return { kind: 'superseded' };
   const meta: JsonValue = {
     provider: GOOGLE_SHEETS_PROVIDER,
@@ -222,7 +239,9 @@ export function sheetsReadJobHandler(deps: SheetsReadDeps): JobHandler {
     if (job.kind !== 'read' || !parseSheetsScope(job.scope)) {
       return { kind: 'abandoned', reason: 'unsupported-job' };
     }
-    const result = await syncSheetsRange(deps, job.scope);
+    const result = await syncSheetsRange(deps, job.scope, {
+      expectedGeneration: job.expectedGeneration,
+    });
     switch (result.kind) {
       case 'published':
       case 'unchanged':
@@ -315,8 +334,8 @@ function retry(
   reason: 'rate-limited' | 'unavailable',
 ): SheetsSyncResult {
   const header = response.headers['retry-after'];
-  const seconds = header !== undefined && /^\d{1,5}$/.test(header) ? Number(header) : null;
-  return retryAt(deps, seconds === null ? null : Math.min(seconds, 3600), reason);
+  const seconds = header !== undefined && /^\d+$/.test(header) ? Number(header) : null;
+  return retryAt(deps, seconds !== null && Number.isSafeInteger(seconds) ? seconds : null, reason);
 }
 
 function retryAt(
