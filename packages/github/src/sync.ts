@@ -340,6 +340,7 @@ function later(clock: Clock, milliseconds: number): string {
 /**
  * `read` job の処理。Host のキューは実行の直前に `authorizeDispatch` で repository の閲覧の認可を
  * 確かめてから呼ぶ。同じ job が二重に配送されても、公開されるのは CAS に勝った一つの世代だけである。
+ * CAS に負けた job は捨てずに retry にし、勝った世代を基に照会し直す。
  */
 export function createGithubReadHandler(deps: GithubReadDeps): JobHandler {
   return async (job) => {
@@ -348,8 +349,10 @@ export function createGithubReadHandler(deps: GithubReadDeps): JobHandler {
     switch (outcome.kind) {
       case 'unchanged':
       case 'published':
-      case 'superseded':
         return { kind: 'done' };
+      case 'superseded':
+        // 先に公開した世代が、この job の取得より新しいとは限らない。公開された世代を基に読み直す。
+        return { kind: 'retry', notBefore: deps.clock.now() };
       case 'incomplete':
         return { kind: 'retry', notBefore: outcome.notBefore };
       case 'unavailable':

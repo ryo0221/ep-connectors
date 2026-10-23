@@ -316,7 +316,69 @@ describe('duplicate and concurrent reads', () => {
     // 二つの staging のうち公開されたのは一つだけで、もう一つは公開されずに残る。
     expect(syncBacking.nextGeneration - 1).toBe(2);
     expect(published?.generation).toBeLessThanOrEqual(2);
+    // CAS に負けた配送は retry を残し、次の実行で照会し直して終わる。
+    expect(queueBacking.jobs[0]?.status).toBe('pending');
+    await runDueJobs(queueBacking, {
+      now: '2026-10-23T00:00:00.000Z',
+      policy,
+      handler: createGithubReadHandler(deps()),
+    });
     expect(queueBacking.jobs[0]?.status).toBe('done');
+  });
+
+  it('retries a read that lost the CAS, so a newer fetch is not dropped', async () => {
+    const { deps, scope, read, repository, sync } = await arrange();
+    const target = repository.items.find((item) => item.id === 'I_1') as FakeItem;
+    let releaseLater: () => void = () => {};
+    let laterReachedCommit: () => void = () => {};
+    const laterAtCommit = new Promise<void>((resolve) => (laterReachedCommit = resolve));
+    const earlierCommitted = new Promise<void>((resolve) => (releaseLater = resolve));
+
+    // 早い job は古い title を読み、commit の直前で止まる。その間に GitHub で更新され、遅い job が
+    // 新しい title を読む。早い job が先に公開し、遅い job は CAS に負ける。
+    const laterStore = sync();
+    const later = {
+      ...deps(),
+      sync: Object.assign(Object.create(laterStore) as typeof laterStore, {
+        commit: async (...args: Parameters<typeof laterStore.commit>) => {
+          laterReachedCommit();
+          await earlierCommitted;
+          return laterStore.commit(...args);
+        },
+      }),
+    };
+    const earlierStore = sync();
+    let laterOutcome: Promise<unknown> = Promise.resolve();
+    const earlier = {
+      ...deps(),
+      sync: Object.assign(Object.create(earlierStore) as typeof earlierStore, {
+        commit: async (...args: Parameters<typeof earlierStore.commit>) => {
+          target.title = 'updated upstream';
+          target.updatedAt = T(45);
+          laterOutcome = createGithubReadHandler(later)({
+            kind: 'read',
+            scope,
+            expectedGeneration: null,
+          });
+          await laterAtCommit;
+          const result = await earlierStore.commit(...args);
+          releaseLater();
+          return result;
+        },
+      }),
+    };
+    const job = { kind: 'read' as const, scope, expectedGeneration: null };
+    expect(await createGithubReadHandler(earlier)(job)).toEqual({ kind: 'done' });
+    expect(await laterOutcome).toEqual({ kind: 'retry', notBefore: '2026-10-23T00:00:00.000Z' });
+    let result = await read();
+    expect(result.ok && result.items.find((item) => item.id === 'I_1')?.title).toBe('Issue 1');
+
+    // Retry で公開済みの世代を基に読み直し、更新を取り込む。
+    expect(await createGithubReadHandler(deps())(job)).toEqual({ kind: 'done' });
+    result = await read();
+    expect(result.ok && result.items.find((item) => item.id === 'I_1')?.title).toBe(
+      'updated upstream',
+    );
   });
 
   it('loses the CAS instead of overwriting a newer generation', async () => {
