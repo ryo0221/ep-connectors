@@ -24,6 +24,7 @@ npm workspacesのmonorepoとし、scopeは`@ep-connectors`とする。公開方�
 | `@ep-connectors/schedule` | Google Calendar / Outlook、Google Meet / Teams / Zoom。設計は[docs/schedule/](schedule/README.md)                              |
 | `@ep-connectors/data`     | DB・表計算（Google Sheets / Excel オンライン）。設計前                                                                         |
 | `@ep-connectors/files`    | ファイルの保存先（Google Drive / OneDrive / SharePoint）。設計前                                                               |
+| `@ep-connectors/github`   | GitHubのリポジトリのファイル、Issue / Pull Request、Projects、レビューのコメント。設計は[docs/github/](github/README.md)       |
 | `@ep-connectors/map`      | 地理データの取得（OGC API Featuresなどのvector feature読取）、地図の背景タイル、住所検索。設計前                               |
 
 依存の規則は次のとおりとする。

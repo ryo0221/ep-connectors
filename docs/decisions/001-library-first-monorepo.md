@@ -9,7 +9,7 @@
 
 EditorPlatformのADR 013は、Google Calendar / Outlook、Google Meet / Teams / Zoomへの接続をEditorの外に置き、「library / service / その両方のどれにするか、永続的な実行基盤、運用主体」をD3の前にG-CONNECTORで決めるとした。設計の草案はEditorPlatformの`docs/schedule/connector/`に仮に置いていた。
 
-接続が必要になるのはScheduleだけではない。DB・表計算、ファイルの保存先、地図（背景タイル、住所検索）にも外部サービスとの接続が要る。どの接続にも、資格情報の保管、外部作用の記録、再試行、Webhookの受け口、同期の基点という共通の部分がある。
+接続が必要になるのはScheduleだけではない。DB・表計算、地図（地理データの取得、背景タイル、住所検索）、GitHub（リポジトリ、Issue、Pull Request）、ファイルの保存先にも外部サービスとの接続が要る。どの接続にも、資格情報の保管、外部作用の記録、再試行、Webhookの受け口、同期の基点という共通の部分がある。
 
 ## 決定
 

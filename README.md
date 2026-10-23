@@ -1,6 +1,6 @@
 # ep-connectors
 
-EditorPlatform を使う Host（PaoBub 製品版、EditorPlatform を組み込む利用者のアプリ）が外部サービスへ接続するためのライブラリ群。カレンダー・会議から始め、DB・表計算、ファイルの保存先、地図へ広げる。
+EditorPlatform を使う Host（PaoBub 製品版、EditorPlatform を組み込む利用者のアプリ）が外部サービスへ接続するためのライブラリ群。カレンダー・会議、DB・表計算、地図、GitHub、ファイルの保存先を扱う。
 
 **状態：設計中。実装はまだない。**
 
@@ -11,6 +11,7 @@ EditorPlatform を使う Host（PaoBub 製品版、EditorPlatform を組み込�
 - [試験の設計](docs/testing.md)：差し口の契約試験、偽の Provider を使う試験、実接続の試験
 - [段階と分野](docs/roadmap.md)
 - [Schedule 接続コンポーネントの設計](docs/schedule/README.md)と[Provider Notes](docs/schedule/provider-notes.md)
+- [GitHub 接続の設計](docs/github/README.md)
 
 ## EditorPlatform との関係
 
