@@ -1,0 +1,11 @@
+{
+  "name": "@ep-connectors/editor-ports",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./schedule": "./src/schedule/index.ts",
+    "./schedule/fixtures": "./src/schedule/fixtures.ts",
+    "./upstream.json": "./upstream.json"
+  }
+}
