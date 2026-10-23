@@ -81,6 +81,46 @@ describe('syncFeatures', () => {
     expect(published?.entries).toHaveLength(25);
   });
 
+  it('keeps the previous generation when the first page has malformed links', async () => {
+    const backing = createSyncBacking();
+    const scope = publicScope();
+    const first = await syncFeatures(
+      publicSetup().reader,
+      new MemorySyncStateStore(backing),
+      scope,
+      QUERY,
+      null,
+    );
+    if (!first.ok) throw new Error('first sync failed');
+    const malformed = publicSetup({
+      intercept: () =>
+        json(
+          200,
+          {
+            type: 'FeatureCollection',
+            features: [pointFeature('station-01', [139.71, 35.65]).feature],
+            links: { rel: 'next', href: 'https://geo.fake.test/ogcapi/collections/stations/items' },
+          },
+          { 'content-type': 'application/geo+json' },
+        ),
+    });
+    const second = await syncFeatures(
+      malformed.reader,
+      new MemorySyncStateStore(backing),
+      scope,
+      QUERY,
+      first.generation,
+    );
+    expect(second).toEqual({
+      ok: false,
+      reason: 'failed',
+      error: { kind: 'read', error: { kind: 'invalid-response', reason: 'links' } },
+    });
+    const published = await new MemorySyncStateStore(backing).read(scope);
+    expect(published?.generation).toBe(first.generation);
+    expect(published?.entries).toHaveLength(25);
+  });
+
   it('publishes nothing when a later page fails, and keeps the previous generation', async () => {
     const backing = createSyncBacking();
     const scope = publicScope();

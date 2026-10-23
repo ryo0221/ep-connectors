@@ -395,6 +395,37 @@ describe('untrusted response edges', () => {
     });
   });
 
+  it.each([
+    ['an object', { rel: 'next', href: `${ORIGIN}/ogcapi/collections/stations/items` }],
+    ['a string', 'next'],
+  ])('treats links given as %s as an invalid response', async (_name, links) => {
+    const setup = publicSetup({
+      intercept: () =>
+        json(
+          200,
+          { type: 'FeatureCollection', features: [], links },
+          { 'content-type': 'application/geo+json' },
+        ),
+    });
+    expect(await readFeaturesPage(setup.reader, QUERY, null)).toEqual({
+      ok: false,
+      error: { kind: 'invalid-response', reason: 'links' },
+    });
+  });
+
+  it('treats a response without links as the last page', async () => {
+    const setup = publicSetup({
+      intercept: () =>
+        json(
+          200,
+          { type: 'FeatureCollection', features: [] },
+          { 'content-type': 'application/geo+json' },
+        ),
+    });
+    const result = await readFeaturesPage(setup.reader, QUERY, null);
+    expect(result.ok && result.value.next).toBeNull();
+  });
+
   it('returns no wait time for a Retry-After it cannot represent', async () => {
     const setup = publicSetup({
       intercept: () => json(429, {}, { 'retry-after': '9999999999999' }),

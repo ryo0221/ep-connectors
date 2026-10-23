@@ -159,6 +159,10 @@ export async function readFeaturesPage(
     else rejected.push({ index, id: parsed.id, reason: parsed.reason });
   });
 
+  // `links` がないのは最後のページとしてよいが、配列でない `links` は次のページの有無を読めない。
+  if (body.links !== undefined && !Array.isArray(body.links)) {
+    return fail({ kind: 'invalid-response', reason: 'links' });
+  }
   const { links, brokenNext } = parseLinks(body.links, url);
   if (brokenNext) return fail({ kind: 'next-link', reason: 'url' });
   let next: string | null = null;
