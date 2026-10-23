@@ -22,7 +22,7 @@ npm workspacesのmonorepoとし、scopeは`@ep-connectors`とする。公開方�
 | `@ep-connectors/core`     | 差し口の型、共通の記録形式（connection key、operation record、receipt、能力宣言）、errorの分類。外部通信・保管の実装は持たない |
 | `@ep-connectors/testing`  | 各差し口のメモリ実装、差し口の契約試験、偽のProviderを組むためのHTTP層。試験専用で、本番の依存に入れない                       |
 | `@ep-connectors/schedule` | Google Calendar / Outlook、Google Meet / Teams / Zoom。設計は[docs/schedule/](schedule/README.md)                              |
-| `@ep-connectors/data`     | DB・表計算（Google Sheets / Excel オンライン）。設計前                                                                         |
+| `@ep-connectors/data`     | DB・表計算（Google Sheets / Excel オンライン）。設計は[docs/data/](data/README.md)、R1はGoogle Sheetsの値の読取                |
 | `@ep-connectors/files`    | ファイルの保存先（Google Drive / OneDrive / SharePoint）。設計前                                                               |
 | `@ep-connectors/github`   | GitHubのリポジトリのファイル、Issue / Pull Request、Projects、レビューのコメント。設計は[docs/github/](github/README.md)       |
 | `@ep-connectors/map`      | 地理データの取得（OGC API Featuresなどのvector feature読取）、地図の背景タイル、住所検索。設計前                               |
