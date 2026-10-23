@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { OperationCatalog } from './catalog.js';
+import type { CatalogOperation, OperationCatalog } from './catalog.js';
 import { checkCatalogRequest, graphqlDocumentHash } from './catalog.js';
 
 const LIST_ISSUES = `
@@ -139,5 +139,92 @@ describe('path and origin matching', () => {
     'https://www.googleapis.com/calendar/v3/calendars/%E0%A4%A/events',
   ])('rejects %s', async (url) => {
     expect((await run(url)).ok).toBe(false);
+  });
+});
+
+describe('resources bound to a request', () => {
+  const catalog: OperationCatalog = {
+    provider: 'github',
+    operations: [
+      {
+        name: 'issues.probe',
+        method: 'GET',
+        origin: 'https://api.github.com',
+        path: '/repos/{owner}/{repo}/issues',
+        scopes: ['issues:read'],
+        auth: 'token',
+        resources: [{ kind: 'github.repository-name', path: ['owner', 'repo'] }],
+      },
+      {
+        name: 'issues.node',
+        method: 'POST',
+        origin: 'https://api.github.com',
+        path: '/graphql',
+        headers: ['content-type'],
+        scopes: ['issues:read'],
+        auth: 'token',
+        graphql: {
+          documentHash: '',
+          kind: 'query',
+          variables: { repositoryId: { type: 'string' } },
+        },
+        resources: [{ kind: 'github.repository', variable: 'repositoryId' }],
+      },
+    ],
+  };
+  const node = 'query Node($repositoryId: ID!) { node(id: $repositoryId) { id } }';
+
+  async function withHash(): Promise<OperationCatalog> {
+    const [probe, graphql] = catalog.operations as [CatalogOperation, CatalogOperation];
+    return {
+      ...catalog,
+      operations: [
+        probe,
+        {
+          ...graphql,
+          graphql: { ...graphql.graphql!, documentHash: await graphqlDocumentHash(node) },
+        },
+      ],
+    };
+  }
+
+  it('returns the decoded path values as one resource', async () => {
+    const result = await checkCatalogRequest({
+      catalog,
+      auth: 'token',
+      grantedScopes: ['issues:read'],
+      request: {
+        operation: 'issues.probe',
+        method: 'GET',
+        url: 'https://api.github.com/repos/ryo0221/ep-connectors/issues',
+      },
+    });
+    expect(result).toMatchObject({
+      ok: true,
+      resources: [{ kind: 'github.repository-name', id: 'ryo0221/ep-connectors' }],
+    });
+  });
+
+  it('returns a GraphQL variable as the resource', async () => {
+    const request = (variables: unknown) => ({
+      operation: 'issues.node',
+      method: 'POST' as const,
+      url: 'https://api.github.com/graphql',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ query: node, variables }),
+    });
+    const input = {
+      catalog: await withHash(),
+      auth: 'token' as const,
+      grantedScopes: ['issues:read'],
+    };
+    expect(
+      await checkCatalogRequest({ ...input, request: request({ repositoryId: 'R_1' }) }),
+    ).toMatchObject({ ok: true, resources: [{ kind: 'github.repository', id: 'R_1' }] });
+    // 資源を取り出せない要求は、認可を問えないため送らない。
+    expect(await checkCatalogRequest({ ...input, request: request({}) })).toMatchObject({
+      ok: false,
+      reason: 'resource',
+    });
   });
 });

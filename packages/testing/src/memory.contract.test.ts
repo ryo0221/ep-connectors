@@ -38,6 +38,11 @@ tokenStoreContract('memory', (env) => {
     },
   ]);
   const policy = new ControllablePolicy([connection]);
+  policy.decideResources((_key, resource) =>
+    env.authorizedResources.some(
+      (allowed) => allowed.kind === resource.kind && allowed.id === resource.id,
+    ),
+  );
   const syncBacking = createSyncBacking();
   const syncState = new MemorySyncStateStore(syncBacking);
   return {

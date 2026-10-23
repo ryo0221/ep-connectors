@@ -3,11 +3,13 @@ import type {
   ConnectionKey,
   HttpRequest,
   OperationCatalog,
+  ResourceRef,
   SyncStateStore,
   TokenStore,
 } from '@ep-connectors/core';
 import { FakeProvider, json, type RawTransport } from '../fake-provider.js';
 import {
+  CONTRACT_AUTHORIZED_RESOURCES,
   CONTRACT_CATALOG,
   CONTRACT_SCOPES,
   FAKE_API,
@@ -20,6 +22,11 @@ export interface TokenStoreContractEnv {
   catalog: OperationCatalog;
   /** 接続が同意を得ている scope。 */
   scopes: readonly string[];
+  /**
+   * 接続の principal が読んでよい資源。実装は目録の `resources` から取り出した資源のうち、
+   * これにないものを含む要求を送らない。
+   */
+  authorizedResources: readonly ResourceRef[];
   /** 偽の Provider。実装は token を付けた要求をここへ送る。 */
   transport: RawTransport;
   /**
@@ -85,6 +92,7 @@ export function tokenStoreContract(name: string, setup: TokenStoreContractSetup)
       const harness = await setup({
         catalog: CONTRACT_CATALOG,
         scopes: CONTRACT_SCOPES,
+        authorizedResources: CONTRACT_AUTHORIZED_RESOURCES,
         transport: provider.transport,
         refresher: async () => {
           refreshCalls += 1;
@@ -222,6 +230,28 @@ export function tokenStoreContract(name: string, setup: TokenStoreContractSetup)
       });
       expect(result).toMatchObject({ ok: false, error: { kind: 'transport' } });
       expectNoSecrets(result, harness.secrets);
+    });
+
+    it('sends a request for a resource the principal may read', async () => {
+      const { provider, harness } = await arrange();
+      const result = await harness.store().send(harness.connection, {
+        operation: 'items.get',
+        method: 'GET',
+        url: `${FAKE_API}/v1/items/item-1`,
+      });
+      expect(result.ok).toBe(true);
+      expect(provider.received).toHaveLength(1);
+    });
+
+    it('does not send a request for a resource the token reaches but the principal may not read', async () => {
+      const { provider, harness } = await arrange();
+      const result = await harness.store().send(harness.connection, {
+        operation: 'items.get',
+        method: 'GET',
+        url: `${FAKE_API}/v1/items/item-other`,
+      });
+      expect(result).toMatchObject({ ok: false, error: { kind: 'policy' } });
+      expect(provider.received).toHaveLength(0);
     });
 
     it('rejects a connection that is not the current session', async () => {
