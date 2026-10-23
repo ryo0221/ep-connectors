@@ -35,12 +35,18 @@ export interface GithubReadOptions {
   fullReconcileIntervalMs?: number;
   /** Rate limit 以外の一時障害の後に待つ時間。 */
   retryDelayMs?: number;
+  /**
+   * 合図による再取得で、合図の時刻からどれだけ遡って読むか。GitHub と Host の時計のずれと、更新から
+   * 配送までの遅れを見込む。
+   */
+  signalLookbackMs?: number;
 }
 
 const DEFAULTS = {
   pageSize: 50,
   fullReconcileIntervalMs: 6 * 60 * 60 * 1000,
   retryDelayMs: 60 * 1000,
+  signalLookbackMs: 5 * 60 * 1000,
 };
 
 export type SyncOutcome =
@@ -62,15 +68,18 @@ type Mode = { kind: 'full' } | { kind: 'delta'; base: PublishedSync; cursor: Wor
  * Repository の Issue / Pull Request の一覧を一回同期する。呼出しの間に状態を持ち越さず、基点は
  * `SyncStateStore` の公開の印から読む。
  *
- * 1. 全件の照合の時期でなければ、REST の ETag で変化を照会する。304 なら何もしない。
+ * 1. 全件の照合の時期でなければ、REST の ETag で変化を照会する。304 なら何もしない。照会が見るのは
+ *    更新の新しい順の先頭一件の表現だけで、repository 全体の変化の保証ではない。そのため Webhook の
+ *    合図（`requestedAt`）による再取得では照会を省く。
  * 2. 変化があれば、更新の新しい順に GraphQL で読み、基点（`watermark`）より古い item で止める。
+ *    合図による再取得では、合図の時刻から `signalLookbackMs` 遡った時刻まで読む。
  *    全件の照合では baseline から作り直す。
  * 3. 全ページを適用してから、cache と基点を世代の CAS で一体に公開する。
  */
 export async function syncWorkItems(
   deps: GithubReadDeps,
   scope: SyncScope,
-  request: { full?: boolean } = {},
+  request: { full?: boolean; requestedAt?: string } = {},
 ): Promise<SyncOutcome> {
   const options = { ...DEFAULTS, ...deps.options };
   const repositoryId = workItemsRepository(scope);
@@ -85,7 +94,11 @@ export async function syncWorkItems(
 
   let mode: Mode = { kind: 'full' };
   let etag: string | null = null;
-  if (published && cursor && !due && !request.full) {
+  const requestedAt = request.requestedAt ? Date.parse(request.requestedAt) : NaN;
+  if (published && cursor && !due && !request.full && !Number.isNaN(requestedAt)) {
+    mode = { kind: 'delta', base: published, cursor };
+    etag = cursor.etag;
+  } else if (published && cursor && !due && !request.full) {
     // 照会は取得の前に行う。取得の途中の変化は次の照会で ETag の違いとして現れる。
     const probe = await probeChanges(deps, scope, cursor, options.retryDelayMs);
     if (probe.kind === 'unchanged') return { kind: 'unchanged', generation: published.generation };
@@ -102,6 +115,13 @@ export async function syncWorkItems(
     return { kind: 'superseded', current: (await deps.sync.read(scope))?.generation ?? null };
 
   const watermark = mode.kind === 'delta' ? mode.cursor.watermark : null;
+  // 読取を止める時刻。合図による再取得では、先頭以外の item の変化も拾えるよう合図の時刻から遡る。
+  const stopBefore =
+    watermark === null
+      ? null
+      : Number.isNaN(requestedAt)
+        ? Date.parse(watermark)
+        : Math.min(Date.parse(watermark), requestedAt - options.signalLookbackMs);
   let repository = cursor?.repository ?? { id: repositoryId, nameWithOwner: '' };
   let newest = watermark;
   let scanStart: number | null = null;
@@ -125,7 +145,7 @@ export async function syncWorkItems(
       let reachedBase = false;
       const upserts = [];
       for (const item of page.items) {
-        if (watermark !== null && Date.parse(item.updatedAt) < Date.parse(watermark)) {
+        if (stopBefore !== null && Date.parse(item.updatedAt) < stopBefore) {
           reachedBase = true;
           break;
         }
@@ -373,7 +393,11 @@ function later(clock: Clock, milliseconds: number): string {
 export function createGithubReadHandler(deps: GithubReadDeps): JobHandler {
   return async (job) => {
     if (job.kind !== 'read') return { kind: 'abandoned', reason: 'not-a-read-job' };
-    const outcome = await syncWorkItems(deps, job.scope);
+    const outcome = await syncWorkItems(
+      deps,
+      job.scope,
+      job.requestedAt === undefined ? {} : { requestedAt: job.requestedAt },
+    );
     switch (outcome.kind) {
       case 'unchanged':
       case 'published':

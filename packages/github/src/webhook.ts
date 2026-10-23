@@ -84,12 +84,16 @@ function webhookTarget(body: string): { installationId: number; repositoryId: st
   }
 }
 
-/** 合図を受けたら、その repository の一覧を再取得する `read` job にする。 */
-export function workItemsJob(signal: WebhookSignal): JobRef {
+/**
+ * 合図を受けたら、その repository の一覧を再取得する `read` job にする。`receivedAt` は通知を受けた
+ * 時刻で、再取得は ETag の照会を省き、この時刻から遡って読む。
+ */
+export function workItemsJob(signal: WebhookSignal, receivedAt: string): JobRef {
   return {
     kind: 'read',
     scope: workItemsScope(signal.connection, signal.target),
     expectedGeneration: null,
+    requestedAt: receivedAt,
   };
 }
 
