@@ -1,6 +1,6 @@
 # 試験の設計
 
-**Proposed、版0.2、2026-10-23。差し口の契約試験は`@ep-connectors/testing`に実装した（C0）。** 何をCIで証明し、何を実接続で確かめるかを定める。シミュレーションでProviderの保証を立証しない。
+**Proposed、版0.2、2026-10-23。差し口の契約試験は`@ep-connectors/testing`に、公開のport契約は`@ep-connectors/editor-ports`に実装した（C0）。** 何をCIで証明し、何を実接続で確かめるかを定める。シミュレーションでProviderの保証を立証しない。
 
 ## 1. 差し口の契約試験
 
@@ -67,5 +67,8 @@ EditorPlatformはprivateであり、本リポジトリの公開CIや外部のcon
 - 公開のport契約は、Host portのうち公開してよい型だけを写す。EditorPlatformの実装・内部の型は含めない。
 - 実装の適合はsecretを使うため、`pull_request_target`などforkのコードにsecretを渡す経路では実行しない。Mainへのpushと、権限のある人が手動で起こした実行に限る。
 - EditorPlatformのport契約が変わったら、固定したport契約を更新するPRを出し、二段とも通す。
+- 固定したport契約は`packages/editor-ports`に置く。写した元のcommitとsymbolは`upstream.json`に記録し、写した型は手で直さない。EditorPlatformのcheckoutと比べる`npm run editor-ports:compare`と、写し直す`npm run editor-ports:sync`がある。公開のCIでは動かさない。
+- Fixtureと観測の検査（`overlayReadProblems`など）は、写したものではなく、Editor–Host契約と上の「接続」列から本リポジトリで書く。EditorPlatformのmock Hostの出力は写さない。
+- 実装の適合を流すprivateなCIは、まだ置いていない。分野のパッケージに最初のadapterができたときに置く。
 
 EditorPlatformは本リポジトリへ依存しないため、この試験は本リポジトリの側だけに置く。
