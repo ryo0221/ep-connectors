@@ -116,18 +116,24 @@ const unsent: readonly StepState[] = ['prepared', 'cancelled-before-dispatch'];
 
 /**
  * 同じ操作の、前後二回の状態（X06、X08）。送信した可能性のある step を未送信へ戻さない。送信後の
- * 取消を `cancelled-before-dispatch` にしない。消えた step も問題にする。
+ * 取消を `cancelled-before-dispatch` にしない。消えた step も問題にする。照合で未送信を証明して
+ * （`OperationLedger.release` が受けた証拠で）`prepared` へ戻した step は `provenUnsent` に挙げる。
  */
 export function operationProgressProblems(
   before: OperationStatus,
   after: OperationStatus,
+  options: { provenUnsent?: readonly string[] } = {},
 ): string[] {
   const problems = operationStatusProblems(after);
   if (after.operation !== before.operation) problems.push('status is for another operation');
   for (const earlier of before.steps) {
     const later = after.steps.find((s) => s.id === earlier.id);
     if (!later) problems.push(`step ${earlier.id} disappeared`);
-    else if (!unsent.includes(earlier.state) && unsent.includes(later.state))
+    else if (
+      !unsent.includes(earlier.state) &&
+      unsent.includes(later.state) &&
+      !options.provenUnsent?.includes(earlier.id)
+    )
       problems.push(`step ${earlier.id} went from ${earlier.state} back to ${later.state}`);
   }
   return problems;

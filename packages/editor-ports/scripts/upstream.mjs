@@ -3,7 +3,7 @@
 //   node packages/editor-ports/scripts/upstream.mjs <editor-platform の checkout>          比べる
 //   node packages/editor-ports/scripts/upstream.mjs <editor-platform の checkout> --write  写し直す
 //
-// 比べるのは comment を除いた宣言だけで、整形や comment の違いは差分にしない。EditorPlatform は
+// 読むのは checkout の HEAD の commit の内容で、作業中の変更は読まない。比べるのは comment を除いた宣言だけで、整形や comment の違いは差分にしない。EditorPlatform は
 // private なので、この script は EditorPlatform を読める権限のある場所でだけ動かす（試験の設計 4）。
 import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -65,7 +65,8 @@ for (const copy of manifest.copies) {
 
   const sections = [];
   for (const source of copy.sources) {
-    const file = parse(source.path, readFileSync(join(upstreamDir, source.path), 'utf8'));
+    // 作業中の変更ではなく、記録する commit の内容を読む。
+    const file = parse(source.path, git('show', `${commit}:${source.path}`));
     const upstream = declarations(file);
     const texts = [];
     for (const name of source.symbols) {

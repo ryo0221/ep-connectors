@@ -121,6 +121,10 @@ describe('observations catch', () => {
     expect(operationProgressProblems(statuses.unknown, statuses.queued)).toEqual([
       'step event went from unknown back to prepared',
     ]);
+    // 照合で未送信を証明して戻した step は問題にしない。
+    expect(
+      operationProgressProblems(statuses.unknown, statuses.queued, { provenUnsent: ['event'] }),
+    ).toEqual([]);
   });
 
   it('a cancel after dispatch reported as cancelled before dispatch (X08)', () => {
