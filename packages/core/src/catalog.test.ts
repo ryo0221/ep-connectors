@@ -227,4 +227,45 @@ describe('resources bound to a request', () => {
       reason: 'resource',
     });
   });
+
+  it('returns a query value as the resource only when it is given once', async () => {
+    const sheets: OperationCatalog = {
+      provider: 'google-sheets',
+      operations: [
+        {
+          name: 'values.batchGet',
+          method: 'GET',
+          origin: 'https://sheets.googleapis.com',
+          path: '/v4/spreadsheets/{spreadsheetId}/values:batchGet',
+          query: ['ranges'],
+          scopes: ['sheets'],
+          auth: 'token',
+          resources: [
+            { kind: 'sheet', path: ['spreadsheetId'] },
+            { kind: 'range', query: 'ranges' },
+          ],
+        },
+      ],
+    };
+    const check = (query: string) =>
+      checkCatalogRequest({
+        catalog: sheets,
+        auth: 'token',
+        grantedScopes: ['sheets'],
+        request: {
+          operation: 'values.batchGet',
+          method: 'GET',
+          url: `https://sheets.googleapis.com/v4/spreadsheets/abc/values:batchGet${query}`,
+        },
+      });
+    expect(await check('?ranges=Sheet1%21A1%3AB2')).toMatchObject({
+      ok: true,
+      resources: [
+        { kind: 'sheet', id: 'abc' },
+        { kind: 'range', id: 'Sheet1!A1:B2' },
+      ],
+    });
+    expect(await check('')).toMatchObject({ ok: false, reason: 'resource' });
+    expect(await check('?ranges=A1&ranges=B2')).toMatchObject({ ok: false, reason: 'resource' });
+  });
 });

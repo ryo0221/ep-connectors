@@ -44,11 +44,13 @@ export interface CatalogOperation {
 
 /**
  * 資源の取り出し方。`path` は path の型の `{name}` を並べた順に `/` でつなぐ（例 `owner/repo`）。
- * `variable` は GraphQL の変数の値をそのまま使う。
+ * `variable` は GraphQL の変数の値をそのまま使う。`query` は query parameter の値で、ちょうど一つ
+ * 指定された要求だけを通す（Google Sheets の `ranges` など）。
  */
 export type ResourceBinding =
   | { kind: string; path: readonly string[] }
-  | { kind: string; variable: string };
+  | { kind: string; variable: string }
+  | { kind: string; query: string };
 
 export interface GraphqlOperation {
   /** `graphqlDocumentHash` で求めた、正規化した document の hash。 */
@@ -153,11 +155,18 @@ export async function checkCatalogRequest(input: CatalogCheckInput): Promise<Cat
         ? binding.path.every((name) => name in pathParams)
           ? binding.path.map((name) => pathParams[name]).join('/')
           : null
-        : variables[binding.variable];
+        : 'query' in binding
+          ? singleQueryValue(url.searchParams, binding.query)
+          : variables[binding.variable];
     if (typeof id !== 'string' || id === '') return reject('resource');
     resources.push({ kind: binding.kind, id });
   }
   return { ok: true, operation, resources };
+}
+
+function singleQueryValue(params: URLSearchParams, name: string): string | null {
+  const values = params.getAll(name);
+  return values.length === 1 ? (values[0] as string) : null;
 }
 
 /** 一致すれば `{name}` ごとの decode した値を返す。 */
