@@ -169,6 +169,7 @@ HTTPS proxyの後ろ（Claude Codeのクラウド環境など）では、Nodeの
 分かったこと：
 
 - Pagingは複数ページで起き、`next`の`f=json`と`offset`は9.2の変更のとおり辿れた。`numberMatched`が割り切れないため、空の最後のページは読まなかった。外から戻った基点（領域を外したもの）は送る前に拒否した。
+- 版：API は pygeoapi 0.25.dev0（`X-Powered-By`とOpenAPIの`info.version`、OpenAPI 3.0.2）。データはNatural Earthの湖で、版の記載はない。9.2は0.24のコードを読んで直したが、0.25.devでも同じ形で通った。
 - 応答は`Content-Type: application/json`、`Content-Crs: <http://www.opengis.net/def/crs/OGC/1.3/CRS84>`（同日にcurlで確認）。
 - itemsの応答にも`license`・`describedby`のlinkはなく、出典のlinkは空。表示に要る帰属は、配備のCC-BY 4.0と、collectionの説明・`canonical`（Natural Earth）から取る必要がある。今の`describeCollection`は`canonical`も説明文の利用条件も返さない。
 
