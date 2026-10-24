@@ -133,8 +133,7 @@ export async function syncWorkItems(
       const page = await fetchPage(deps, scope, repositoryId, kind, after, options);
       if (page.kind === 'outcome') {
         if (page.outcome.kind === 'unavailable' && page.outcome.reason === 'not-found') {
-          // 読めなくなった repository の写しを表示し続けない（設計 2.1）。
-          await deps.sync.invalidate(scope);
+          return invalidateNotFound(deps.sync, scope, published);
         }
         return page.outcome;
       }
@@ -184,6 +183,26 @@ export async function syncWorkItems(
   );
   if (!committed.ok) return { kind: 'superseded', current: committed.current };
   return { kind: 'published', generation: committed.generation, mode: mode.kind, fetched };
+}
+
+/**
+ * 読めなくなった repository の写しを表示し続けない（設計 2.1）。無効にするのは取得の開始に読んだ
+ * 世代だけで、比較と削除は `invalidate` の CAS で一体に行う。その間に別の worker が公開した世代は
+ * 消さず、`not-found` も確定させない。新しい世代を基に読み直して確かめるため `superseded` を返す。
+ */
+async function invalidateNotFound(
+  sync: SyncStateStore,
+  scope: SyncScope,
+  published: PublishedSync | null,
+): Promise<SyncOutcome> {
+  const notFound: SyncOutcome = { kind: 'unavailable', reason: 'not-found' };
+  if (published === null) {
+    // 消す世代がない。無条件の invalidate は、同時に初回を公開した worker の世代を消してしまう。
+    const current = (await sync.read(scope))?.generation ?? null;
+    return current === null ? notFound : { kind: 'superseded', current };
+  }
+  const invalidated = await sync.invalidate(scope, published.generation);
+  return invalidated.ok ? notFound : { kind: 'superseded', current: invalidated.current };
 }
 
 type Probe =
