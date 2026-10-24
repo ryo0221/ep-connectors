@@ -408,3 +408,163 @@ describe('duplicate and concurrent reads', () => {
     );
   });
 });
+
+describe('a repository that GitHub no longer resolves', () => {
+  const notFound = { status: 404, headers: {}, body: '{"message":"Not Found"}' };
+
+  /** `invalidate` / `read` の直前に別の worker の同期を挟める保管。 */
+  function interleaved(
+    store: ReturnType<Awaited<ReturnType<typeof arrange>>['sync']>,
+    hooks: {
+      beforeInvalidate?: () => Promise<unknown>;
+      beforeRead?: (call: number) => Promise<unknown>;
+    },
+  ) {
+    const invalidations: (number | undefined)[] = [];
+    let reads = 0;
+    const wrapped = Object.assign(Object.create(store) as typeof store, {
+      invalidate: async (...args: Parameters<typeof store.invalidate>) => {
+        invalidations.push(args[1]);
+        await hooks.beforeInvalidate?.();
+        return store.invalidate(...args);
+      },
+      read: async (...args: Parameters<typeof store.read>) => {
+        reads += 1;
+        await hooks.beforeRead?.(reads);
+        return store.read(...args);
+      },
+    });
+    return { wrapped, invalidations };
+  }
+
+  it('keeps a generation another worker published after the not-found', async () => {
+    const { deps, scope, read, sync, github, clock } = await arrange();
+    const first = await syncWorkItems(deps(), scope);
+    const before = first.kind === 'published' ? first.generation : -1;
+    clock.advance(6 * 60 * 60 * 1000);
+
+    // A の最初の GraphQL だけが 404。A が無効にする前に、B が同じ scope の新しい世代を公開する。
+    github.failNext('graphql', notFound);
+    let other: Awaited<ReturnType<typeof syncWorkItems>> | undefined;
+    const { wrapped, invalidations } = interleaved(sync(), {
+      beforeInvalidate: async () => {
+        other = await syncWorkItems(deps(), scope, { full: true });
+      },
+    });
+    const outcome = await syncWorkItems({ ...deps(), sync: wrapped }, scope);
+
+    expect(other).toMatchObject({ kind: 'published', mode: 'full' });
+    const newer = other?.kind === 'published' ? other.generation : -1;
+    expect(newer).toBeGreaterThan(before);
+    // 取得の開始に読んだ世代だけを指定して無効にしようとし、CAS に負ける。
+    expect(invalidations).toEqual([before]);
+    expect(outcome).toEqual({ kind: 'superseded', current: newer });
+
+    const published = await sync().read(scope);
+    expect(published?.generation).toBe(newer);
+    expect(published?.entries).toHaveLength(4);
+    expect(published?.cursor).not.toBeNull();
+    const result = await read();
+    expect(result.ok && result.provenance.generation).toBe(newer);
+  });
+
+  it('invalidates only the generation it read while that generation is still published', async () => {
+    const { deps, scope, sync, github, clock } = await arrange();
+    const first = await syncWorkItems(deps(), scope);
+    const before = first.kind === 'published' ? first.generation : -1;
+    github.repositories.delete('R_a');
+    clock.advance(6 * 60 * 60 * 1000);
+
+    const { wrapped, invalidations } = interleaved(sync(), {});
+    expect(await syncWorkItems({ ...deps(), sync: wrapped }, scope)).toEqual({
+      kind: 'unavailable',
+      reason: 'not-found',
+    });
+    expect(invalidations).toEqual([before]);
+    expect(await sync().read(scope)).toBeNull();
+  });
+
+  it('removes nothing on a first sync that finds no repository', async () => {
+    const { deps, scope, sync, github } = await arrange();
+    github.repositories.delete('R_a');
+    const { wrapped, invalidations } = interleaved(sync(), {});
+    expect(await syncWorkItems({ ...deps(), sync: wrapped }, scope)).toEqual({
+      kind: 'unavailable',
+      reason: 'not-found',
+    });
+    expect(invalidations).toEqual([]);
+    expect(await sync().read(scope)).toBeNull();
+  });
+
+  it('keeps the first generation another worker published while its own first sync failed', async () => {
+    const { deps, scope, sync, github } = await arrange();
+    github.failNext('graphql', notFound);
+    let other: Awaited<ReturnType<typeof syncWorkItems>> | undefined;
+    const { wrapped, invalidations } = interleaved(sync(), {
+      // 一回目は取得の開始（まだ何も公開されていない）、二回目は not-found の後。
+      beforeRead: async (call) => {
+        if (call === 2) other = await syncWorkItems(deps(), scope);
+      },
+    });
+    const outcome = await syncWorkItems({ ...deps(), sync: wrapped }, scope);
+
+    expect(other).toMatchObject({ kind: 'published', mode: 'full' });
+    const generation = other?.kind === 'published' ? other.generation : -1;
+    expect(outcome).toEqual({ kind: 'superseded', current: generation });
+    expect(invalidations).toEqual([]);
+    const published = await sync().read(scope);
+    expect(published?.generation).toBe(generation);
+    expect(published?.entries).toHaveLength(4);
+  });
+
+  it('retries a superseded not-found and decides again on the newer generation', async () => {
+    const { deps, scope, read, sync, github, clock } = await arrange();
+    await syncWorkItems(deps(), scope);
+    clock.advance(6 * 60 * 60 * 1000);
+    github.failNext('graphql', notFound);
+    let newer = -1;
+    const { wrapped } = interleaved(sync(), {
+      beforeInvalidate: async () => {
+        const other = await syncWorkItems(deps(), scope, { full: true });
+        newer = other.kind === 'published' ? other.generation : -1;
+      },
+    });
+    const job = { kind: 'read' as const, scope, expectedGeneration: null };
+    expect(await createGithubReadHandler({ ...deps(), sync: wrapped })(job)).toEqual({
+      kind: 'retry',
+      notBefore: clock.now(),
+    });
+    expect((await sync().read(scope))?.generation).toBe(newer);
+
+    // Retry の時点で repository が読めれば、写しを残して終わる。
+    expect(await createGithubReadHandler(deps())(job)).toEqual({ kind: 'done' });
+    expect((await read()).ok).toBe(true);
+
+    // 本当に読めなくなっていれば、その時点で公開されている世代を無効にする。
+    github.repositories.delete('R_a');
+    clock.advance(6 * 60 * 60 * 1000);
+    expect(await createGithubReadHandler(deps())(job)).toEqual({
+      kind: 'abandoned',
+      reason: 'not-found',
+    });
+    expect(await sync().read(scope)).toBeNull();
+    expect(await read()).toEqual({ ok: false, reason: 'not-synced' });
+  });
+
+  it.each([
+    ['a rate limit', { status: 429, headers: { 'retry-after': '30' }, body: '' }],
+    ['a server error', { status: 502, headers: {}, body: '' }],
+  ])('keeps the published copy on %s', async (_label, response) => {
+    const { deps, scope, sync, github, clock } = await arrange();
+    const first = await syncWorkItems(deps(), scope);
+    const before = first.kind === 'published' ? first.generation : -1;
+    clock.advance(6 * 60 * 60 * 1000);
+    github.failNext('graphql', response);
+    const { wrapped, invalidations } = interleaved(sync(), {});
+    expect(await syncWorkItems({ ...deps(), sync: wrapped }, scope)).toMatchObject({
+      kind: 'incomplete',
+    });
+    expect(invalidations).toEqual([]);
+    expect((await sync().read(scope))?.generation).toBe(before);
+  });
+});
