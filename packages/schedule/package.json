@@ -1,0 +1,16 @@
+{
+  "name": "@ep-connectors/schedule",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./google": "./src/google/index.ts"
+  },
+  "dependencies": {
+    "@ep-connectors/core": "*"
+  },
+  "devDependencies": {
+    "@ep-connectors/testing": "*"
+  }
+}

@@ -269,6 +269,26 @@ describe('Google Sheets range read', () => {
     expect(sheets.received).toHaveLength(1);
   });
 
+  it('reads again for a superseded job whose request came after the winning read started', async () => {
+    const { sheets, deps, clock, readCopy } = arrange();
+    await syncSheetsRange(deps(), scope);
+    // 公開の後に表が変わり、その時刻を持つ job が遅れて届く（期待する世代は古い）。
+    clock.advance(1_000);
+    sheets.set(SPREADSHEET, RANGE, { resolved: RANGE, values: [['changed']] });
+    const handler = sheetsReadJobHandler(deps());
+    expect(
+      await handler({ kind: 'read', scope, expectedGeneration: null, requestedAt: clock.now() }),
+    ).toEqual({ kind: 'done' });
+    expect((await readCopy(scope))?.rows).toEqual([['changed']]);
+    expect(sheets.received).toHaveLength(2);
+
+    // 公開済みの取得が request より後に始まっていれば、取りに行かない。
+    expect(
+      await handler({ kind: 'read', scope, expectedGeneration: null, requestedAt: NOW }),
+    ).toEqual({ kind: 'done' });
+    expect(sheets.received).toHaveLength(2);
+  });
+
   it('does not publish values fetched while the connection was revoked', async () => {
     const { sheets, deps, readCopy } = arrange();
     // 初回の取得の送信中に接続が解除される。

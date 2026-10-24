@@ -1,6 +1,6 @@
 # Schedule接続コンポーネントの設計（草案）
 
-**Proposed、版0.3、2026-10-23。未実装。** Google Calendar / Outlook、Google Meet / Teams / Zoomへの接続を実行する側の内部設計を置く。複数のHost（PaoBub製品版、EditorPlatformを組み込む利用者のアプリ）から使う`@ep-connectors/schedule`の設計である。版0.2まではEditorPlatformの`docs/schedule/connector/`に仮に置いていた。ライブラリとして作ることと置き場所は[ADR 001](../decisions/001-library-first-monorepo.md)で決める。永続的な実行部分を担う基盤（[Common Runtime](https://github.com/ryo0221/common-runtime)への適合を含む）と運用主体は、引き続きD3の前に[G-CONNECTOR](https://github.com/ryo0221/editor-platform/blob/main/docs/schedule/README.md#実装前gate)で決める。
+**Proposed、版0.3、2026-10-23。Google Calendarの読取だけをR1で実装した（9）。** Google Calendar / Outlook、Google Meet / Teams / Zoomへの接続を実行する側の内部設計を置く。複数のHost（PaoBub製品版、EditorPlatformを組み込む利用者のアプリ）から使う`@ep-connectors/schedule`の設計である。版0.2まではEditorPlatformの`docs/schedule/connector/`に仮に置いていた。ライブラリとして作ることと置き場所は[ADR 001](../decisions/001-library-first-monorepo.md)で決める。永続的な実行部分を担う基盤（[Common Runtime](https://github.com/ryo0221/common-runtime)への適合を含む）と運用主体は、引き続きD3の前に[G-CONNECTOR](https://github.com/ryo0221/editor-platform/blob/main/docs/schedule/README.md#実装前gate)で決める。
 
 EditorとHostの間の約束（状態の意味、保存・Undoと送信の分離、私有情報の分離、保証する範囲）の正本は[Editor–Host契約](https://github.com/ryo0221/editor-platform/blob/main/docs/schedule/editor-host-contract.md)である。本書はその約束を満たす手順を定め、食い違う場合は契約を優先する。Providerの事実と未確認事項は[Provider Notes](provider-notes.md)にまとめる。
 
@@ -104,3 +104,20 @@ EditorPlatformのHost port（`ScheduleReadPort` / `ScheduleEffectPort`）は、H
 ## 8. 検証
 
 接続コンポーネントで証明する観測は、[検証計画の観測層の割当](https://github.com/ryo0221/editor-platform/blob/main/docs/schedule/verification-plan.md#観測層の割当)の「接続」列に従う。シナリオIDはEditor側と共通とし、本書では新しいIDを作らない。試験の層の分け方は[試験の設計](../testing.md)に従う。シミュレーションでProviderの保証を立証せず、実接続の試験は別途許可した検証用アカウントと宛先で行う。
+
+## 9. R1の読取（Google Calendar）
+
+`@ep-connectors/schedule/google`に、`events.list`と`syncToken`による読取を実装した（[段階と分野](../roadmap.md)のR1）。偽のProviderで`TokenStore`・`SyncStateStore`・`JobQueue`・`WebhookIntake`の上に通す縦断試験は`packages/schedule/test/`にある。
+
+- 目録は`calendar.events.list`（GET）だけで、scopeは`calendar.events.readonly`とする。書込みの操作は載せない。
+- 同期の対象はconnection・calendar・取得条件・固定した期間で束縛する（`googleCalendarScope`）。初回は`timeMin` / `timeMax`で期間を指定して全件を取り、以後は`syncToken`だけで差分を取る。`singleEvents`と`maxResults`は初回と同じ値で送る。
+- 基点は`syncToken`と取得した時刻を一つの記録にし、`SyncStateStore`には不透明な文字列として保管する。全ページを適用してから`commit`で公開し、途中で止まれば公開済みの世代のまま残る。
+- 410は基点の失効として、そのscopeだけを`invalidate`して全件を取り直す。作り直しが終わるまで読取は`complete: false`になる。台帳には触れない。
+- 401は一度だけ`refresh`して同じページを送り直す。失効なら止める（`TokenStore`が基点も無効にする）。429、`rateLimitExceeded` / `userRateLimitExceeded`の403、5xx、通信の失敗では自分で送り直さず、`Retry-After`か既定の待機の後の`read` jobを`JobQueue`へ預ける。
+- 読取のDTOはEditorPlatformの`OverlayRead` / `OverlayEvent`と同じ形にした。同期の期間の外は`missing`に入れ、空きとして返さない。接続が現在のsessionのものでなければcacheを返さない。
+
+R2の実接続で次を確かめる。確かめるまで、偽のProviderは保証しない側で振る舞い、adapterもそれに耐える作りにしている。
+
+- `timeMin` / `timeMax`を付けた初回の後の`syncToken`の差分が、期間の外の変更を含むか。Adapterは含む前提で、期間の外へ出た予定をcacheから外す。
+- `singleEvents=true`と`syncToken`の組合せでの、繰り返しの発生回の差分の返り方。
+- `syncToken`の失効（410）が起きる条件と頻度。

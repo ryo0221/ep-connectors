@@ -145,10 +145,12 @@ export async function syncSheetsRange(
   // 無効になると staging も消え、取得した値を公開できなくなる。公開済みの世代があるときは、
   // 無効化で `commit` の世代の CAS が通らなくなる。
   let staged = expected === null ? await deps.syncState.stage(scope, null) : null;
+  const startedAt = deps.clock.now();
 
   const sent = await sendWithRefresh(deps, scope.connection, buildRequest(target));
   if (sent.kind !== 'response') {
     // Project から外された表の写しを、本人向けにも残さない。
+    // 読めなくなった後の世代も残さないため、世代を問わずに無効にする。
     if (sent.result.kind === 'failed' && sent.result.reason === 'not-authorized') {
       await deps.syncState.invalidate(scope);
     }
@@ -183,6 +185,7 @@ export async function syncSheetsRange(
     valueRender: target.valueRender,
     columnCount: parsed.columnCount,
     rowCount: parsed.rows.length,
+    startedAt,
     fetchedAt: deps.clock.now(),
     contentHash,
   };
@@ -286,9 +289,18 @@ export function sheetsReadJobHandler(deps: SheetsReadDeps): JobHandler {
     if (job.kind !== 'read' || !parseSheetsScope(job.scope)) {
       return { kind: 'abandoned', reason: 'unsupported-job' };
     }
-    const result = await syncSheetsRange(deps, job.scope, {
+    let result = await syncSheetsRange(deps, job.scope, {
       expectedGeneration: job.expectedGeneration,
     });
+    if (
+      result.kind === 'superseded' &&
+      job.requestedAt !== undefined &&
+      !(await coversRequest(deps.syncState, job.scope, job.requestedAt))
+    ) {
+      // 追い越した取得は、取り直しが要ると分かった時刻より前に始まっていた。その後の変更を
+      // 読み落とさないよう、公開済みの世代から取り直す。
+      result = await syncSheetsRange(deps, job.scope);
+    }
     switch (result.kind) {
       case 'published':
       case 'unchanged':
@@ -300,6 +312,17 @@ export function sheetsReadJobHandler(deps: SheetsReadDeps): JobHandler {
         return { kind: 'abandoned', reason: result.reason };
     }
   };
+}
+
+/** 公開済みの世代が、`requestedAt` より後に始まった取得のものか。 */
+async function coversRequest(
+  syncState: SyncStateStore,
+  scope: SyncScope,
+  requestedAt: string,
+): Promise<boolean> {
+  const published = await syncState.read(scope);
+  const meta = published?.entries.find((entry) => entry.id === META_ID)?.value;
+  return isMeta(meta) && Date.parse(meta.startedAt) > Date.parse(requestedAt);
 }
 
 /**
@@ -476,6 +499,7 @@ interface StoredMeta {
   valueRender: ValueRender;
   columnCount: number;
   rowCount: number;
+  startedAt: string;
   fetchedAt: string;
   contentHash: string;
 }
@@ -490,6 +514,7 @@ function isMeta(value: unknown): value is StoredMeta {
     (value.valueRender === 'unformatted' || value.valueRender === 'formatted') &&
     Number.isInteger(value.columnCount) &&
     Number.isInteger(value.rowCount) &&
+    typeof value.startedAt === 'string' &&
     typeof value.fetchedAt === 'string' &&
     typeof value.contentHash === 'string'
   );

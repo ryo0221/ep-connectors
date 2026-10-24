@@ -1,0 +1,16 @@
+{
+  "name": "@ep-connectors/map",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./ogc-features": "./src/ogc-features/index.ts"
+  },
+  "dependencies": {
+    "@ep-connectors/core": "*"
+  },
+  "devDependencies": {
+    "@ep-connectors/testing": "*"
+  }
+}

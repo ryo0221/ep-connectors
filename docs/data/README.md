@@ -52,6 +52,7 @@ Sheetsの値には、Calendarの`syncToken`のような差分の基点がない�
 - Scopeは、connection、spreadsheet ID、取得条件（範囲と`valueRender`）に束縛する。範囲や値の取り出し方が違う写しを流用しない。
 - 取得のたびに範囲の全体をbaselineとして`stage(scope, null)`へ書き、全行を`applyPage`で書き終えてから`commit`で公開する。基点（cursor）には内容のhashを置き、hashが公開済みの世代と同じなら新しい世代を作らない。
 - 同じ`read` jobが二重に配送されても、jobの`expectedGeneration`を`commit`の世代のCASに使うため、公開は一つだけになる。遅れた配送は、公開済みの世代が期待と違えば送らずに`superseded`として終える。
+- `read` jobに`requestedAt`があり、追い越した取得がその時刻より前に始まっていた場合は、その後の変更を読み落とさないよう公開済みの世代から取り直す。公開済みの取得がその時刻より後に始まっていれば、取りに行かない。
 - 送信中に`TokenStore.revoke`で写しが無効になっても、取得した値を公開しない。公開済みの世代がなければ送る前にstagingを作り、無効化でstagingごと消えるようにする。公開済みの世代があれば、無効化で`commit`のCASが通らなくなる。
 - 書込みの途中で止まっても、読む側は前の世代を見る。再起動の後は公開済みの世代から取り直す。
 - 変更の通知は使わない。Hostは定期的な`read` jobで取り直す。間隔はHostが決める。
