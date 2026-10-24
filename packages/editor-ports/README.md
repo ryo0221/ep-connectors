@@ -5,6 +5,9 @@ EditorPlatform の Host port のうち、公開してよい型を写して固定
 | subpath                                         | 中身                                                                                                                                                                                       |
 | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `@ep-connectors/editor-ports/schedule`          | `ScheduleReadPort` / `ScheduleEffectPort` とその入出力の型（[port.ts](src/schedule/port.ts)、写したもの）。値が契約を守っているかの検査（[observations.ts](src/schedule/observations.ts)） |
+| `@ep-connectors/editor-ports/geo`               | `GeoFeatureReadPort` とその入出力の型（[port.ts](src/geo/port.ts)、写したもの）                                                                                                            |
+| `@ep-connectors/editor-ports/data`              | `TableReadPort` とその入出力の型（[port.ts](src/data/port.ts)、写したもの）                                                                                                                |
+| `@ep-connectors/editor-ports/work-items`        | `WorkItemReadPort` とその入出力の型（GitHub の Issue / Pull Request の一覧、[port.ts](src/work-items/port.ts)、写したもの）                                                                |
 | `@ep-connectors/editor-ports/schedule/fixtures` | 架空のデータだけの fixture。検証計画のシナリオ ID ごとに、読取・合図・計画・操作の状態を並べた                                                                                             |
 | `@ep-connectors/editor-ports/upstream.json`     | 写した元の repository、commit、日付、file ごとの最後の変更の commit、symbol の一覧                                                                                                         |
 
@@ -14,13 +17,14 @@ EditorPlatform の Host port のうち、公開してよい型を写して固定
 
 写さないものと理由は次のとおり。
 
-| EditorPlatform の symbol                                                                  | 理由                                                                                                 |
-| ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| `ScheduleLaneHost`、`ScheduleLaneState`、`ScheduleLaneItem`、`laneShown`、`laneItemLimit` | Data の参照（Artifact References）を表示する Host の口で、外部接続ではない。内部の参照の型に依存する |
-| `effectIntent`、`planBasis`、`summarizeOperation`、`dispatched`、`plainExternalText`      | Editor の実装。Adapter は意図を受け取り、状態を返すだけで、これらを使わない                          |
-| `OperationSummary`、`readOnlyText`                                                        | Editor の表示のための型と文言                                                                        |
-| `ScheduleEvent`、`RecordLink` などの model                                                | 共有 content の型。Host へは `EffectIntent` の allowlist の field だけが渡る                         |
-| `createMockScheduleHost`                                                                  | 決定的な mock Host の実装。Fixture は写さず、契約から本リポジトリで書いた                            |
+| EditorPlatform の symbol                                                                              | 理由                                                                                                 |
+| ----------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `ScheduleLaneHost`、`ScheduleLaneState`、`ScheduleLaneItem`、`laneShown`、`laneItemLimit`             | Data の参照（Artifact References）を表示する Host の口で、外部接続ではない。内部の参照の型に依存する |
+| `effectIntent`、`planBasis`、`summarizeOperation`、`dispatched`、`plainExternalText`                  | Editor の実装。Adapter は意図を受け取り、状態を返すだけで、これらを使わない                          |
+| `OperationSummary`、`readOnlyText`                                                                    | Editor の表示のための型と文言                                                                        |
+| `ScheduleEvent`、`RecordLink` などの model                                                            | 共有 content の型。Host へは `EffectIntent` の allowlist の field だけが渡る                         |
+| `createMockScheduleHost`、`createMockGeoFeatureHost`、`createMockTableHost`、`createMockWorkItemHost` | 決定的な mock Host の実装。EditorPlatform の参照 Host で使う                                         |
+| `parseGeoBbox`                                                                                        | Editor が利用者の入力を確かめる実装。Host は検査済みの `bbox` を受け取る                             |
 
 `observations.ts` と `fixtures.ts` は写したものではない。Editor–Host 契約（3、5、9）と検証計画の観測層の割当の「接続」列から、本リポジトリで書いた。
 
