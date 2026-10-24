@@ -2,7 +2,8 @@ import type { JsonObject, JsonValue, SyncEntry } from '@ep-connectors/core';
 import { plainExternalText } from '../overlay.js';
 
 /**
- * Cache に置く一つの予定。Google の event JSON の全体を写さず、表示と照合に要る field だけを持つ。
+ * Cache に置く一つの予定。Google の event JSON の全体を写さず、表示と照合に要る field だけを持つ。メモ
+ * （`description`）は受け取らず、持たない（参加者のメールや会議の URL が書かれることが多いため）。
  * 文字列は取り込む時点で plain text にする。
  */
 export interface CachedGoogleEvent {
@@ -12,7 +13,6 @@ export interface CachedGoogleEvent {
   start: GoogleTime;
   end: GoogleTime;
   summary?: string;
-  description?: string;
   /** 繰り返しの発生回。発生回は `recurringEventId + originalStartTime` で識別する（Provider Notes 8）。 */
   recurringEventId?: string;
   originalStartTime?: GoogleTime;
@@ -90,7 +90,6 @@ function toCachedEvent(item: Record<string, unknown>): CachedGoogleEvent | null 
     end,
   };
   if (typeof item.summary === 'string') event.summary = plainExternalText(item.summary, 500);
-  if (typeof item.description === 'string') event.description = plainExternalText(item.description);
   if (typeof item.recurringEventId === 'string') event.recurringEventId = item.recurringEventId;
   const original = toTime(item.originalStartTime);
   if (original) event.originalStartTime = original;

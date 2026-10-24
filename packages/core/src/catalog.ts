@@ -24,6 +24,12 @@ export interface CatalogOperation {
   path: string;
   /** 許可する query parameter の名前。載っていない名前の要求は送らない。 */
   query?: readonly string[];
+  /**
+   * どの要求にもちょうど一つ、この値で付ける query parameter（`query` に載せなくてよい）。
+   * 付いていない、二つ以上ある、値が違う要求は送らない。Google の `fields` のように、受け取る
+   * 応答の field を Host の側で固定するために使う。
+   */
+  fixedQuery?: Readonly<Record<string, string>>;
   /** 認証以外に許可する request header（小文字）。 */
   headers?: readonly string[];
   /** この操作に要る scope。connection の scope に一つでも欠ければ送らない。 */
@@ -75,6 +81,7 @@ export type CatalogRejection =
   | 'origin'
   | 'path'
   | 'query'
+  | 'fixed-query'
   | 'url'
   | 'credential-header'
   | 'header'
@@ -126,8 +133,13 @@ export async function checkCatalogRequest(input: CatalogCheckInput): Promise<Cat
   const pathParams = matchPath(operation.path, url.pathname);
   if (!pathParams) return reject('path');
   const allowedQuery = operation.query ?? [];
+  const fixedQuery = operation.fixedQuery ?? {};
   for (const name of url.searchParams.keys()) {
-    if (!allowedQuery.includes(name)) return reject('query');
+    if (!allowedQuery.includes(name) && !Object.hasOwn(fixedQuery, name)) return reject('query');
+  }
+  for (const [name, value] of Object.entries(fixedQuery)) {
+    const given = url.searchParams.getAll(name);
+    if (given.length !== 1 || given[0] !== value) return reject('fixed-query');
   }
 
   const headers = normalizeHeaders(request.headers);

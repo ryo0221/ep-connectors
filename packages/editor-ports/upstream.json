@@ -1,6 +1,6 @@
 {
   "repository": "https://github.com/ryo0221/editor-platform",
-  "commit": "f2af9e502ce158ac93e96c786262f3d7ab3cdf8f",
+  "commit": "57a266a6bdd094005a5bd9987facfee7da37eb7d",
   "copiedOn": "2026-10-24",
   "contract": "docs/schedule/editor-host-contract.md",
   "copies": [
@@ -19,7 +19,7 @@
         },
         {
           "path": "packages/schedule/src/host.ts",
-          "lastChanged": "473a230b0c6e263a1e3cd7c1ea8be9c7441ef1d2",
+          "lastChanged": "57a266a6bdd094005a5bd9987facfee7da37eb7d",
           "symbols": [
             "ScheduleSourceInfo",
             "OverlayEvent",
@@ -43,12 +43,12 @@
       "sources": [
         {
           "path": "packages/geo-core/src/model.ts",
-          "lastChanged": "86e4958692374b8c965c6d36f016de2d0ba1eefc",
+          "lastChanged": "4b40c344a6041bb072d075a8c6ad987dfa1248e2",
           "symbols": ["Scalar", "Position", "Geometry"]
         },
         {
           "path": "packages/geo-core/src/host.ts",
-          "lastChanged": "f2af9e502ce158ac93e96c786262f3d7ab3cdf8f",
+          "lastChanged": "8a2807c8f9e17f1b55df70c60f5f6cf870117e04",
           "symbols": [
             "GeoBbox",
             "GeoFeatureSourceInfo",
