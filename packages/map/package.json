@@ -11,6 +11,7 @@
     "@ep-connectors/core": "*"
   },
   "devDependencies": {
-    "@ep-connectors/testing": "*"
+    "@ep-connectors/testing": "*",
+    "@ep-connectors/live": "*"
   }
 }

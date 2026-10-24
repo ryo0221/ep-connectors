@@ -233,6 +233,50 @@ describe('readFeaturesPage', () => {
     );
   });
 
+  it('sends and keeps the fixed query the deployment needs, as pygeoapi does', async () => {
+    const source = { ...PUBLIC_SOURCE, pagingParameters: ['offset'], fixedQuery: { f: 'json' } };
+    const setup = publicSetup({ fixedQuery: { f: 'json' } }, source);
+    const pages = await readAll(setup, QUERY);
+    expect(pages.flatMap((page) => page.features)).toHaveLength(25);
+    for (const request of setup.provider.received) {
+      expect(new URL(request.url).searchParams.get('f')).toBe('json');
+    }
+    expect((await describeCollection(setup.reader, 'stations')).ok).toBe(true);
+
+    // 固定の query を宣言していない配備では、`f` を含む `next` を辿らない。
+    const undeclared = publicSetup({ rewriteNext: (href) => `${href}&f=json` });
+    expect(await readFeaturesPage(undeclared.reader, QUERY, null)).toEqual({
+      ok: false,
+      error: { kind: 'next-link', reason: 'query' },
+    });
+    // `next` や外から戻った基点が固定の query を落としていても、付けて送る。
+    const dropped = publicSetup(
+      {
+        fixedQuery: { f: 'json' },
+        rewriteNext: (href) => {
+          const url = new URL(href);
+          url.searchParams.delete('f');
+          return url.toString();
+        },
+      },
+      source,
+    );
+    expect((await readAll(dropped, QUERY)).flatMap((page) => page.features)).toHaveLength(25);
+    for (const request of dropped.provider.received) {
+      expect(new URL(request.url).searchParams.get('f')).toBe('json');
+    }
+
+    // 宣言した値と違う形式へは移らない。
+    const html = publicSetup(
+      { fixedQuery: { f: 'json' }, rewriteNext: (href) => href.replace('f=json', 'f=html') },
+      source,
+    );
+    expect(await readFeaturesPage(html.reader, QUERY, null)).toEqual({
+      ok: false,
+      error: { kind: 'next-link', reason: 'query' },
+    });
+  });
+
   it('reports a next link only offered as HTML as an invalid response', async () => {
     const setup = publicSetup({ nextType: 'text/html' });
     const result = await readFeaturesPage(setup.reader, QUERY, null);
@@ -364,6 +408,18 @@ describe('describeCollection', () => {
     const setup = publicSetup({ collections: [collection] });
     const result = await describeCollection(setup.reader, 'stations');
     expect(result.ok && result.value.supportsCrs84).toBe(false);
+  });
+
+  it('accepts itemType feature and rejects other item types before reading items', async () => {
+    const feature = publicSetup({ collections: [{ ...stations(), itemType: 'feature' }] });
+    expect((await describeCollection(feature.reader, 'stations')).ok).toBe(true);
+
+    // pygeoapi の /cite の lakes は tile として公開され、items は 400 を返す（docs/map 9.4）。
+    const tile = publicSetup({ collections: [{ ...stations(), itemType: 'tile' }] });
+    expect(await describeCollection(tile.reader, 'stations')).toEqual({
+      ok: false,
+      error: { kind: 'unsupported-item-type', itemType: 'tile' },
+    });
   });
 
   it('returns not found as an http error', async () => {

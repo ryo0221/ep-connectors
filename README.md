@@ -20,6 +20,7 @@ npm run check   # prettier、eslint、tsc、vitest
 | [`@ep-connectors/testing`](packages/testing/src)       | 各差し口のメモリ実装（試験専用）、偽の Provider、Host の実装にも流せる契約試験（`@ep-connectors/testing/contracts`）                                                |
 | [`@ep-connectors/map`](packages/map/src)               | Geo の vector feature 読取。`@ep-connectors/map/ogc-features` が OGC API Features の bbox 検索、ページング、CRS84 の検査、写しの公開を持つ                          |
 | [`@ep-connectors/data`](packages/data/src)             | 表の範囲の読取の DTO（`TableRangeRead`）と Google Sheets の adapter（`@ep-connectors/data/google-sheets`）                                                          |
+| [`@ep-connectors/live`](packages/live/src)             | 手動の実接続試験（`npm run test:live`）で使う、認証のない `HttpTransport` の `fetch` による実装                                                                     |
 | [`@ep-connectors/github`](packages/github/src)         | GitHub の Issue / Pull Request の一覧の読取（固定の GraphQL document、repository 単位の認可、ETag による変化の照会）、webhook の検証                                |
 
 Host が自分の差し口の実装を確かめるときは、`@ep-connectors/testing/contracts` の `tokenStoreContract` などに実装を渡して vitest で流す。例は [memory.contract.test.ts](packages/testing/src/memory.contract.test.ts)。
