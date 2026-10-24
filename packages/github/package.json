@@ -1,0 +1,15 @@
+{
+  "name": "@ep-connectors/github",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@ep-connectors/core": "*"
+  },
+  "devDependencies": {
+    "@ep-connectors/testing": "*"
+  }
+}

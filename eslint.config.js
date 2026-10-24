@@ -43,6 +43,26 @@ export default tseslint.config(
     },
   },
   {
+    files: ['packages/github/src/**/*.ts'],
+    ignores: ['packages/github/src/**/*.test.ts', 'packages/github/src/test/**'],
+    rules: {
+      // 分野のパッケージは core にだけ依存し、通信は TokenStore.send を通す。
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['node:*', 'fs', 'http', 'https', 'net'],
+              message: 'send through TokenStore.',
+            },
+            { group: ['@ep-connectors/testing'], message: 'testing is for tests only.' },
+          ],
+        },
+      ],
+      'no-restricted-globals': ['error', 'fetch', 'setTimeout', 'setInterval'],
+    },
+  },
+  {
     files: ['packages/*/scripts/**/*.mjs'],
     languageOptions: { globals: { process: 'readonly', console: 'readonly' } },
   },

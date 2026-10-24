@@ -30,11 +30,14 @@
 - Microsoftの`@removed`を元の予定の削除として扱わない。
 - 各stepと各retryの直前に権限を再確認し、失効していたら未送信のstepを止める。
 
-GitHubでは次を試験する（[GitHub接続の設計](github/README.md)）。
+GitHubでは次を試験する（[GitHub接続の設計](github/README.md)、`packages/github/src/*.test.ts`）。
 
 - `operationName`が目録と同じでもdocumentが違う要求（fieldやaliasの追加、別のリポジトリ）を拒否する。変数のowner / repository IDが認可の範囲外なら送らない。
 - 同じinstallationの中で、認可されていないrepositoryの内容を、要求・再取得・cacheからの表示のどれでも返さない。対応表から外したrepositoryの写しは表示されなくなる。
 - Webhookの再配送を配送IDで一度だけ扱い、古い通知で新しい状態を上書きしない。
+- ETagの照会が304ならGraphQLを送らない。差分の読取は基点より古いitemで止まり、削除・移動は定期的な全件の照合で反映する。Webhookの合図による再取得は照会を省き、先頭以外のitemの変化も読む。
+- Rate limitでページの途中まで取れなかった場合は何も公開せず、前の写しを残し、`JobQueue`へ待機の時刻を渡す。
+- 同じ`read` jobの二重の配送で、公開される世代は一つだけになる。CASに負けた配送は捨てずに読み直す。
 
 シナリオIDはEditorPlatformの[検証計画](https://github.com/ryo0221/editor-platform/blob/main/docs/schedule/verification-plan.md#観測層の割当)と共通にし、「接続」列の観測をここで証明する。本リポジトリで新しいIDを作らない。
 
