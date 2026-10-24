@@ -88,6 +88,10 @@ export class MemoryTokenStore implements TokenStore {
       grantedScopes: stored.scopes,
     });
     if (!check.ok) return { ok: false, error: { kind: 'catalog', reason: check.reason } };
+    if (check.resources.length > 0) {
+      const allowed = await this.options.policy.authorizeResources(key, check.resources);
+      if (!allowed.ok) return { ok: false, error: { kind: 'policy', reason: allowed.reason } };
+    }
 
     const headers = {
       ...normalizeHeaders(request.headers),

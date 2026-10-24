@@ -11,6 +11,12 @@ export type PolicyDenial =
   | 'plan-digest-mismatch'
   | 'forbidden';
 
+/** 要求が触れる資源。`kind` は分野が決める（例 `github.repository`）。 */
+export interface ResourceRef {
+  kind: string;
+  id: string;
+}
+
 export type PolicyDecision = { ok: true } | { ok: false; reason: PolicyDenial };
 
 /**
@@ -20,6 +26,15 @@ export type PolicyDecision = { ok: true } | { ok: false; reason: PolicyDenial };
 export interface HostPolicy {
   /** 渡された key が、現在の session の principal に属する現在の世代の接続か。 */
   authorizeConnection(key: ConnectionKey): Promise<PolicyDecision>;
+  /**
+   * 接続の principal・project が、要求の触れる資源を読んでよいか。Installation のように一つの token が
+   * 複数の project の資源に届く接続で、token が届くことを閲覧の認可として扱わないために使う。
+   * `TokenStore.send` は目録の `resources` から取り出した資源でこれを呼び、cache から表示する側も呼ぶ。
+   */
+  authorizeResources(
+    key: ConnectionKey,
+    resources: readonly ResourceRef[],
+  ): Promise<PolicyDecision>;
   /**
    * Job を実行する直前の再確認（全体設計 3.4）。種類ごとに確かめる内容が違う。
    * `step`: 計画の有効期限と digest、principal・membership・connection、送信先への権限。

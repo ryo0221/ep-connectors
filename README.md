@@ -2,7 +2,7 @@
 
 EditorPlatform を使う Host（PaoBub 製品版、EditorPlatform を組み込む利用者のアプリ）が外部サービスへ接続するためのライブラリ群。カレンダー・会議、DB・表計算、地図、GitHub、ファイルの保存先を扱う。
 
-**状態：C0 の実装中。** `@ep-connectors/core`（差し口の型と目録の検査）と `@ep-connectors/testing`（メモリ実装、偽の Provider、契約試験）、`@ep-connectors/editor-ports`（EditorPlatform の Host port から写して固定した型と fixture）がある。Provider の adapter はまだない。
+**状態：C0 の実装中、R1 に着手。** `@ep-connectors/core`（差し口の型と目録の検査）、`@ep-connectors/testing`（メモリ実装、偽の Provider、契約試験）、`@ep-connectors/editor-ports`（EditorPlatform の Host port から写して固定した型と fixture）、`@ep-connectors/data`（Google Sheets の値の範囲の読取。偽の Provider での試験だけ）がある。
 
 ## 開発
 
@@ -19,6 +19,7 @@ npm run check   # prettier、eslint、tsc、vitest
 | [`@ep-connectors/editor-ports`](packages/editor-ports) | EditorPlatform の Host port（今は `ScheduleReadPort` / `ScheduleEffectPort`）から写した公開の型、写した元の commit の記録、契約の観測の検査、架空の fixture         |
 | [`@ep-connectors/testing`](packages/testing/src)       | 各差し口のメモリ実装（試験専用）、偽の Provider、Host の実装にも流せる契約試験（`@ep-connectors/testing/contracts`）                                                |
 | [`@ep-connectors/map`](packages/map/src)               | Geo の vector feature 読取。`@ep-connectors/map/ogc-features` が OGC API Features の bbox 検索、ページング、CRS84 の検査、写しの公開を持つ                          |
+| [`@ep-connectors/data`](packages/data/src)             | 表の範囲の読取の DTO（`TableRangeRead`）と Google Sheets の adapter（`@ep-connectors/data/google-sheets`）                                                          |
 
 Host が自分の差し口の実装を確かめるときは、`@ep-connectors/testing/contracts` の `tokenStoreContract` などに実装を渡して vitest で流す。例は [memory.contract.test.ts](packages/testing/src/memory.contract.test.ts)。
 
@@ -31,6 +32,7 @@ Host が自分の差し口の実装を確かめるときは、`@ep-connectors/te
 - [Schedule 接続コンポーネントの設計](docs/schedule/README.md)と[Provider Notes](docs/schedule/provider-notes.md)
 - [GitHub 接続の設計](docs/github/README.md)
 - [Geo 接続の設計：vector feature の読取](docs/map/README.md)
+- [Data 接続の設計](docs/data/README.md)
 
 ## EditorPlatform との関係
 

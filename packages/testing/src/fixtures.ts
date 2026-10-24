@@ -1,4 +1,10 @@
-import type { Clock, ConnectionKey, IdSource, OperationCatalog } from '@ep-connectors/core';
+import type {
+  Clock,
+  ConnectionKey,
+  IdSource,
+  OperationCatalog,
+  ResourceRef,
+} from '@ep-connectors/core';
 
 export const FAKE_API = 'https://api.fake.test';
 export const FAKE_FILES = 'https://files.fake.test';
@@ -24,6 +30,7 @@ export const CONTRACT_CATALOG: OperationCatalog = {
       path: '/v1/items/{itemId}',
       scopes: ['items.read'],
       auth: 'token',
+      resources: [{ kind: 'fake.item', path: ['itemId'] }],
     },
     {
       name: 'items.create',
@@ -69,6 +76,11 @@ export const CONTRACT_CATALOG: OperationCatalog = {
     },
   ],
 };
+
+/** 契約試験の connection の principal が読んでよい資源。`item-other` は含めない。 */
+export const CONTRACT_AUTHORIZED_RESOURCES: readonly ResourceRef[] = [
+  { kind: 'fake.item', id: 'item-1' },
+];
 
 /** 契約試験の connection が同意を得ている scope。`admin` は含めない。 */
 export const CONTRACT_SCOPES = ['items.read', 'items.write'];
