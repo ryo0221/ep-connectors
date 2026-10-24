@@ -17,22 +17,23 @@
 
 npm workspacesのmonorepoとし、scopeは`@ep-connectors`とする。公開方法（npm / GitHub Packages）は最初の公開の前に決める。
 
-| パッケージ                | 中身                                                                                                                           |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `@ep-connectors/core`     | 差し口の型、共通の記録形式（connection key、operation record、receipt、能力宣言）、errorの分類。外部通信・保管の実装は持たない |
-| `@ep-connectors/testing`  | 各差し口のメモリ実装、差し口の契約試験、偽のProviderを組むためのHTTP層。試験専用で、本番の依存に入れない                       |
-| `@ep-connectors/schedule` | Google Calendar / Outlook、Google Meet / Teams / Zoom。設計は[docs/schedule/](schedule/README.md)                              |
-| `@ep-connectors/data`     | DB・表計算（Google Sheets / Excel オンライン）。設計は[docs/data/](data/README.md)、R1はGoogle Sheetsの値の読取                |
-| `@ep-connectors/files`    | ファイルの保存先（Google Drive / OneDrive / SharePoint）。設計前                                                               |
-| `@ep-connectors/github`   | GitHubのリポジトリのファイル、Issue / Pull Request、Projects、レビューのコメント。設計は[docs/github/](github/README.md)       |
-| `@ep-connectors/map`      | 地理データの取得（OGC API Featuresなどのvector feature読取）、地図の背景タイル、住所検索。設計前                               |
+| パッケージ                    | 中身                                                                                                                                                                                   |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@ep-connectors/core`         | 差し口の型、共通の記録形式（connection key、operation record、receipt、能力宣言）、errorの分類。外部通信・保管の実装は持たない                                                         |
+| `@ep-connectors/editor-ports` | EditorPlatformのHost portから写した公開の型と、写した元のcommitの記録、fixture（[試験の設計の4](testing.md#4-editorplatformとの適合)）。型と純粋な検査だけで、実行時に何も持ち込まない |
+| `@ep-connectors/testing`      | 各差し口のメモリ実装、差し口の契約試験、偽のProviderを組むためのHTTP層。試験専用で、本番の依存に入れない                                                                               |
+| `@ep-connectors/schedule`     | Google Calendar / Outlook、Google Meet / Teams / Zoom。設計は[docs/schedule/](schedule/README.md)                                                                                      |
+| `@ep-connectors/data`         | DB・表計算（Google Sheets / Excel オンライン）。設計は[docs/data/](data/README.md)、R1はGoogle Sheetsの値の読取                                                                        |
+| `@ep-connectors/files`        | ファイルの保存先（Google Drive / OneDrive / SharePoint）。設計前                                                                                                                       |
+| `@ep-connectors/github`       | GitHubのリポジトリのファイル、Issue / Pull Request、Projects、レビューのコメント。設計は[docs/github/](github/README.md)                                                               |
+| `@ep-connectors/map`          | 地理データの取得（OGC API Featuresなどのvector feature読取）、地図の背景タイル、住所検索。設計前                                                                                       |
 
 依存の規則は次のとおりとする。
 
-- 分野のパッケージは`core`にだけ依存する。分野どうしは直接依存しない。
+- 分野のパッケージは`core`と`editor-ports`にだけ依存する。分野どうしは直接依存しない。
 - Providerごとのadapterは分野のパッケージの中にsubpath exportとして置く（例: `@ep-connectors/schedule/google`）。Hostは使うProviderだけをimportする。
 - 同じProviderの共通部分（Google / MicrosoftのOAuth endpoint、error応答の解釈など）は、二つ目の分野が必要とした時点で`@ep-connectors/provider-google`のような共通パッケージへ切り出す。先回りして作らない。
-- EditorPlatformのpackageは現在privateのため、実行時の依存にしない。分野のパッケージはEditorPlatformのHost portを構造的に満たす型で実装する。適合は、本リポジトリに固定した公開可能なport契約と、権限のあるCIでの実装の適合試験の二段で確かめる（[試験の設計](testing.md#4-editorplatformとの適合)）。
+- EditorPlatformのpackageは現在privateのため、実行時の依存にしない。分野のパッケージはEditorPlatformのHost portを構造的に満たす型で実装する。適合は、本リポジトリに固定した公開可能なport契約（`@ep-connectors/editor-ports`）と、権限のあるCIでの実装の適合試験の二段で確かめる（[試験の設計](testing.md#4-editorplatformとの適合)）。
 
 言語はTypeScript、実行環境はEditorPlatformに合わせてNode 22.13以上または24、試験はvitestとする。
 
