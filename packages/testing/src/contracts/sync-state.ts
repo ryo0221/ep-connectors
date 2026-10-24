@@ -217,11 +217,39 @@ export function syncStateContract(name: string, setup: SyncStateContractSetup): 
         [{ id: 'e1', value: 1 }],
         'cursor-1',
       );
-      await harness.store().invalidate(scope);
+      expect(await harness.store().invalidate(scope)).toEqual({ ok: true });
       expect(await harness.store().read(scope)).toBeNull();
       expect(await harness.store().stage(scope, generation)).toEqual({
         ok: false,
         reason: 'stale-base',
+      });
+    });
+
+    it('invalidates with an expected generation only while that generation is published', async () => {
+      const harness = await setup();
+      const first = await publish(harness.store(), scope, [{ id: 'e1', value: 1 }], 'cursor-1');
+      // 一つの worker が世代 first を読んだあと、別の worker が新しい世代を公開する。
+      const seen = await harness.store().read(scope);
+      expect(seen?.generation).toBe(first);
+      const second = await publish(harness.store(), scope, [{ id: 'e1', value: 2 }], 'cursor-2');
+      expect(await harness.store().invalidate(scope, first)).toEqual({
+        ok: false,
+        reason: 'generation-mismatch',
+        current: second,
+      });
+      expect(await harness.store().read(scope)).toMatchObject({
+        generation: second,
+        cursor: 'cursor-2',
+        entries: [{ id: 'e1', value: 2 }],
+      });
+
+      expect(await harness.store().invalidate(scope, second)).toEqual({ ok: true });
+      expect(await harness.store().read(scope)).toBeNull();
+      // 公開済みの世代がなければ、期待した世代での無効化は一致しない。
+      expect(await harness.store().invalidate(scope, second)).toEqual({
+        ok: false,
+        reason: 'generation-mismatch',
+        current: null,
       });
     });
 

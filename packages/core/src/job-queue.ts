@@ -7,7 +7,17 @@ import type { SyncScope } from './sync-state.js';
  */
 export type JobRef =
   | { kind: 'step'; operation: string; step: string }
-  | { kind: 'read'; scope: SyncScope; expectedGeneration: number | null }
+  | {
+      kind: 'read';
+      scope: SyncScope;
+      expectedGeneration: number | null;
+      /**
+       * 取り直しが要ると分かった時刻（ISO 8601。Webhook の受信、失敗した取得など）。この時刻より
+       * あとに始まった取得がすでに公開されていれば、その job は取りに行かずに終えてよい。遅れて
+       * 届いた重複の配送を、変更を読み落とさずに見分けるために使う。
+       */
+      requestedAt?: string;
+    }
   | { kind: 'subscription'; connection: ConnectionKey; subscription: string };
 
 export interface EnqueueOptions {
