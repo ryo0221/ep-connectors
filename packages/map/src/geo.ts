@@ -131,9 +131,16 @@ export function parseFeature(
   }
   const geometry = parseGeometry(value.geometry ?? null);
   if (geometry === 'invalid') return { ok: false, id, reason: 'invalid-geometry' };
+  let copied: JsonObject = {};
+  try {
+    if (properties !== null) copied = plainObject(properties);
+  } catch (error) {
+    if (error instanceof UnsafeKey) return { ok: false, id, reason: 'invalid-feature' };
+    throw error;
+  }
   return {
     ok: true,
-    feature: { id, geometry, properties: properties === null ? {} : plainObject(properties) },
+    feature: { id, geometry, properties: copied },
   };
 }
 
@@ -156,11 +163,16 @@ function plainValue(value: unknown): JsonValue {
   return null;
 }
 
+/** Plain text として扱えない文字を含む属性の名前。 */
+class UnsafeKey extends Error {}
+
 function plainObject(value: Record<string, unknown>): JsonObject {
   const result: JsonObject = {};
   for (const [key, member] of Object.entries(value)) {
+    // 名前は書き換えない。書き換えると別の属性と同じ名前になり、値が上書きされ得る（ID と同じ扱い）。
+    if (plainText(key) !== key) throw new UnsafeKey();
     // `__proto__` などの名前も data として持つ。代入では prototype の setter が呼ばれる。
-    Object.defineProperty(result, plainText(key), {
+    Object.defineProperty(result, key, {
       value: plainValue(member),
       enumerable: true,
       writable: true,

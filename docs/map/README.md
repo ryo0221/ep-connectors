@@ -42,7 +42,7 @@ Hostは配備ごとに`OgcFeaturesSource`（Provider名、origin、landing page�
 3. 429は`rate-limited`、5xxは`unavailable`とし、`Retry-After`を時刻にして返す。3xxは辿らない（配備の移転は設定の変更として扱う）。
 4. `Content-Crs`がCRS84でなければ`unsupported-crs`として拒否する。変換も軸の入れ替えもしない。
 5. 地物を一つずつ検査する。Geometryの形（環が閉じている、座標が二つか三つの有限の数）とCRS84の範囲を確かめ、合わないものは捨てずに`rejected`へ位置と理由を入れる。範囲の検査は、緯度・経度を入れ替えた座標の一部も見つける。
-6. `properties`の文字列は未信頼のplain textとして、制御文字と表示の向きを変える文字を除く。HTMLとして解釈せず、中のURLを自動でfetchしない（[全体設計の5](../architecture.md#5-未信頼の入力と私有情報)）。
+6. `properties`の文字列の値は未信頼のplain textとして、制御文字と表示の向きを変える文字を除く。地物のIDと属性の名前は書き換えない。書き換えると別のものと同じ名前になり得るため、そうした文字を含む地物は`invalid-feature`として拒否する。HTMLとして解釈せず、中のURLを自動でfetchしない（[全体設計の5](../architecture.md#5-未信頼の入力と私有情報)）。
 7. `next` linkはGeoJSONのもの（HTMLの`next`は選ばない）を選び、次をすべて満たすときだけ`next`として返す：同じorigin、同じcollectionのitemsのpath、`bbox`が数として同じ、宣言したparameterだけを持つ、`limit`が範囲内。領域を外した全件の取得や、別のcollectionへの付け替えを止めるためである。
 8. 出典として、Provider名、origin、collection、取得時刻（`Clock`）、配備の`timeStamp`、応答の`license`・`describedby`のlinkを返す。
 

@@ -455,6 +455,32 @@ describe('untrusted response edges', () => {
     expect(JSON.stringify(properties)).toBe('{"__proto__":{"polluted":true}}');
   });
 
+  it.each([
+    ['top level', { ab: 1, 'a\u0000b': 2 }],
+    ['nested', { detail: { ab: 1, 'a\u202Eb': 2 } }],
+    ['inside an array', { list: [{ 'a\u0007b': 1 }] }],
+  ])(
+    'rejects a feature whose %s property names would have to be rewritten',
+    async (_name, properties) => {
+      const collection = stations();
+      collection.features = [
+        pointFeature('bad', [139.75, 35.65], properties),
+        pointFeature('good', [139.75, 35.65], { ab: 1 }),
+      ];
+      const setup = publicSetup({ collections: [collection] });
+      const result = await readFeaturesPage(setup.reader, QUERY, null);
+      if (!result.ok) throw new Error(JSON.stringify(result.error));
+      expect(result.value.features).toEqual([
+        {
+          id: 'good',
+          geometry: { type: 'Point', coordinates: [139.75, 35.65] },
+          properties: { ab: 1 },
+        },
+      ]);
+      expect(result.value.rejected).toEqual([{ index: 0, id: 'bad', reason: 'invalid-feature' }]);
+    },
+  );
+
   it('rejects ids it would have to rewrite instead of merging distinct features', async () => {
     const collection = stations();
     collection.features = [
