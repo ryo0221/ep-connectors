@@ -249,6 +249,23 @@ describe('readFeaturesPage', () => {
       ok: false,
       error: { kind: 'next-link', reason: 'query' },
     });
+    // `next` や外から戻った基点が固定の query を落としていても、付けて送る。
+    const dropped = publicSetup(
+      {
+        fixedQuery: { f: 'json' },
+        rewriteNext: (href) => {
+          const url = new URL(href);
+          url.searchParams.delete('f');
+          return url.toString();
+        },
+      },
+      source,
+    );
+    expect((await readAll(dropped, QUERY)).flatMap((page) => page.features)).toHaveLength(25);
+    for (const request of dropped.provider.received) {
+      expect(new URL(request.url).searchParams.get('f')).toBe('json');
+    }
+
     // 宣言した値と違う形式へは移らない。
     const html = publicSetup(
       { fixedQuery: { f: 'json' }, rewriteNext: (href) => href.replace('f=json', 'f=html') },

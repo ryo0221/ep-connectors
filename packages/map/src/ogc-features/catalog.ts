@@ -22,7 +22,7 @@ export interface OgcFeaturesSource {
   pagingParameters?: readonly string[];
   /**
    * 配備が応答の形式を決めるために要る固定の query（pygeoapi の `f=json` など）。全ての要求に付け、
-   * `next` link に現れたときは同じ値に限って辿る。`bbox`・`limit`・paging の parameter と重ねない。
+   * `next` link に現れたときは同じ値に限って辿り、落としていれば付け直す。`bbox`・`limit`・paging の parameter と重ねない。
    */
   fixedQuery?: Readonly<Record<string, string>>;
 }

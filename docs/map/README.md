@@ -31,7 +31,7 @@ Hostは配備ごとに`OgcFeaturesSource`（Provider名、origin、landing page�
 | `features.collection` | `{basePath}/collections/{collectionId}`       | 固定のquery                                                                                                 |
 | `features.items`      | `{basePath}/collections/{collectionId}/items` | `bbox`、`limit`、配備が宣言したpagingのparameter（既定は`offset`、`startIndex`、`startindex`）、固定のquery |
 
-固定のquery（`fixedQuery`）は、応答の形式をqueryで決める配備のためにある。pygeoapiは`Accept`から決めた形式を`f=json`として`next` linkに残すため、宣言しないと2ページ目以降を辿れない（9.2）。全ての要求に付け、`next` linkに現れたときは宣言と同じ値に限って辿る（`f=html`などの別の形式へは移らない）。
+固定のquery（`fixedQuery`）は、応答の形式をqueryで決める配備のためにある。pygeoapiは`Accept`から決めた形式を`f=json`として`next` linkに残すため、宣言しないと2ページ目以降を辿れない（9.2）。全ての要求に付け、`next` linkに現れたときは宣言と同じ値に限って辿り（`f=html`などの別の形式へは移らない）、落としていれば付け直して送る。
 
 公開データは`auth: 'none'`とし、`HttpTransport`で送る。認証の要る配備は`auth: 'token'`とし、`TokenStore.send`で送る。どちらもHostの側で目録の検査を通す。
 

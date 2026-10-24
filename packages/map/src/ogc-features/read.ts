@@ -291,7 +291,8 @@ export function checkNextLink(
       return { ok: false, reason: 'limit' };
     }
   }
-  return { ok: true, url: url.toString() };
+  // `next` が固定の query を落としていても、全ての要求に付ける。
+  return { ok: true, url: withFixedQuery(source, url).toString() };
 }
 
 function checkQuery(query: FeatureQuery): 'bbox' | 'limit' | 'collection' | null {
