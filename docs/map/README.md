@@ -115,6 +115,8 @@ npm ci
 npm run test:live   # vitest.live.config.ts。*.live.test.ts だけを一つずつ動かす
 ```
 
+HTTPS proxyの後ろ（Claude Codeのクラウド環境など）では、Nodeの`fetch`は`HTTPS_PROXY`を読まないため`NODE_USE_ENV_PROXY=1 npm run test:live`とする（Node 22.21以上）。
+
 - 試験は[`pygeoapi-cite.live.test.ts`](../../packages/map/src/ogc-features/pygeoapi-cite.live.test.ts)。`npm run check`と通常のCIは`*.live.test.ts`を含めず、networkもsecretも要らない。Actionsの予算にも依存しない。
 - 送信は`@ep-connectors/live`の`FetchHttpTransport`が行う。目録の検査を通った要求だけを送り、redirectを辿らず（`redirect: 'manual'`）、cookieを送らず、30秒と5 MiBの上限を置く。`user-agent`に本issueのURLを入れる。
 - 確かめること：CRS84の宣言、最初のページの形（Polygon / MultiPolygon、`limit`以下）と出典、外から戻った基点（領域を外したもの）を送る前に拒否すること、全ページを一つの世代として公開し、`stored + rejected = numberMatched`であること。
