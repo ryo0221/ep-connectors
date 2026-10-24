@@ -11,6 +11,7 @@
     "@ep-connectors/core": "*"
   },
   "devDependencies": {
+    "@ep-connectors/editor-ports": "*",
     "@ep-connectors/testing": "*"
   }
 }

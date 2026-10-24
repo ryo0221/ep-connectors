@@ -14,7 +14,12 @@ import type {
   WebhookSignal,
 } from '@ep-connectors/core';
 import { canonicalJson, sameConnectionGeneration } from '@ep-connectors/core';
-import { EVENTS_LIST, GOOGLE_API_ORIGIN, GOOGLE_PROVIDER } from './catalog.js';
+import {
+  EVENTS_LIST,
+  GOOGLE_API_ORIGIN,
+  GOOGLE_EVENTS_FIELDS,
+  GOOGLE_PROVIDER,
+} from './catalog.js';
 import { parseEventsPage } from './events.js';
 
 /** 一つの calendar を固定した期間で読む同期の対象。 */
@@ -34,7 +39,8 @@ export const GOOGLE_EVENTS_QUERY = {
   operation: EVENTS_LIST,
   singleEvents: true,
   maxResults: 250,
-  version: 1,
+  fields: GOOGLE_EVENTS_FIELDS,
+  version: 2,
 } as const;
 
 export function googleCalendarScope(source: GoogleCalendarSource): SyncScope {
@@ -217,6 +223,7 @@ function eventsListRequest(
   url.searchParams.set('singleEvents', String(GOOGLE_EVENTS_QUERY.singleEvents));
   url.searchParams.set('maxResults', String(GOOGLE_EVENTS_QUERY.maxResults));
   if (pageToken !== undefined) url.searchParams.set('pageToken', pageToken);
+  url.searchParams.set('fields', GOOGLE_EVENTS_FIELDS);
   return { operation: EVENTS_LIST, method: 'GET', url: url.toString() };
 }
 

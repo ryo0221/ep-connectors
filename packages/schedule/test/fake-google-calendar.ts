@@ -6,6 +6,9 @@ export interface FakeEvent {
   id: string;
   summary?: string;
   description?: string;
+  /** 読取が受け取ってはならない field（`fields` で落とされる）。 */
+  attendees?: { email: string }[];
+  hangoutLink?: string;
   start: { dateTime: string; timeZone?: string } | { date: string };
   end: { dateTime: string } | { date: string };
 }
@@ -33,6 +36,8 @@ export class FakeGoogleCalendar {
   readonly provider = new FakeProvider();
   validToken = 'access-token-1';
   pageSize = 2;
+  /** false にすると `fields` を無視して全部の field を返す（adapter が自分でも落とすかを確かめる）。 */
+  honorFields = true;
   private seq = 0;
   private readonly calendars = new Map<string, Map<string, StoredEvent>>();
   private readonly expiredTokens = new Set<string>();
@@ -117,7 +122,8 @@ export class FakeGoogleCalendar {
     } else {
       body.nextSyncToken = syncToken(cursor.upTo);
     }
-    return json(200, body);
+    const fields = query.get('fields');
+    return json(200, fields !== null && this.honorFields ? applyFields(body, fields) : body);
   }
 
   private firstCursor(query: URLSearchParams): PageCursor | null {
@@ -167,4 +173,19 @@ function syncToken(seq: number): string {
 
 function timeOf(time: { dateTime: string } | { date: string }): number {
   return 'date' in time ? Date.parse(`${time.date}T00:00:00Z`) : Date.parse(time.dateTime);
+}
+
+/**
+ * `fields` の部分応答。この偽物が使う形（`items(a,b),c`）だけを読む。入れ子の指定は扱わない。
+ */
+function applyFields(body: Record<string, unknown>, fields: string): Record<string, unknown> {
+  const match = /^items\(([^()]*)\)((?:,[A-Za-z]+)*)$/.exec(fields);
+  if (!match) throw new Error(`unsupported fields: ${fields}`);
+  const itemFields = (match[1] ?? '').split(',');
+  const topFields = ['items', ...(match[2] ?? '').split(',').filter(Boolean)];
+  const pick = (value: Record<string, unknown>, names: string[]) =>
+    Object.fromEntries(Object.entries(value).filter(([name]) => names.includes(name)));
+  const result = pick(body, topFields);
+  result.items = (body.items as Record<string, unknown>[]).map((item) => pick(item, itemFields));
+  return result;
 }

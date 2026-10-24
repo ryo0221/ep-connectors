@@ -51,7 +51,6 @@ export async function readGoogleCalendarRange(
       overlay.allDay = { startDate: event.start.date, endDate: event.end.date };
     }
     if (event.summary !== undefined) overlay.title = event.summary;
-    if (event.description !== undefined) overlay.notes = event.description;
     events.push(overlay);
   }
   events.sort((a, b) => a.start - b.start || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));

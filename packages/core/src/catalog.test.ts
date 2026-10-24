@@ -269,3 +269,45 @@ describe('resources bound to a request', () => {
     expect(await check('?ranges=A1&ranges=B2')).toMatchObject({ ok: false, reason: 'resource' });
   });
 });
+
+describe('fixed query parameters', () => {
+  const catalog: OperationCatalog = {
+    provider: 'google',
+    operations: [
+      {
+        name: 'events.list',
+        method: 'GET',
+        origin: 'https://www.googleapis.com',
+        path: '/calendar/v3/calendars/{calendarId}/events',
+        query: ['pageToken'],
+        fixedQuery: { fields: 'items(id),nextPageToken' },
+        scopes: ['calendar.readonly'],
+        auth: 'token',
+      },
+    ],
+  };
+  const run = (query: string) =>
+    checkCatalogRequest({
+      catalog,
+      auth: 'token',
+      grantedScopes: ['calendar.readonly'],
+      request: {
+        operation: 'events.list',
+        method: 'GET',
+        url: `https://www.googleapis.com/calendar/v3/calendars/primary/events${query}`,
+      },
+    });
+  const fields = encodeURIComponent('items(id),nextPageToken');
+
+  it('accepts the declared value exactly once', async () => {
+    expect((await run(`?fields=${fields}&pageToken=x`)).ok).toBe(true);
+  });
+
+  it.each([
+    ['missing', '?pageToken=x'],
+    ['a different value', `?fields=${encodeURIComponent('items')}`],
+    ['given twice', `?fields=${fields}&fields=${fields}`],
+  ])('rejects a request with the fixed parameter %s', async (_label, query) => {
+    expect(await run(query)).toMatchObject({ ok: false, reason: 'fixed-query' });
+  });
+});
