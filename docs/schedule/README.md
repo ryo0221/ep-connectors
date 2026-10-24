@@ -110,6 +110,7 @@ EditorPlatformのHost port（`ScheduleReadPort` / `ScheduleEffectPort`）は、H
 `@ep-connectors/schedule/google`に、`events.list`と`syncToken`による読取を実装した（[段階と分野](../roadmap.md)のR1）。偽のProviderで`TokenStore`・`SyncStateStore`・`JobQueue`・`WebhookIntake`の上に通す縦断試験は`packages/schedule/test/`にある。
 
 - 目録は`calendar.events.list`（GET）だけで、scopeは`calendar.events.readonly`とする。書込みの操作は載せない。
+- 受け取るfieldは`fields`で固定する（`GOOGLE_EVENTS_FIELDS`：id・etag・status・updated・start・end・summary・繰り返しの印と、ページの基点）。目録の`fixedQuery`で、この値のちょうど一つの`fields`が無い要求をHostが送らない。参加者・主催者・作成者・会議のURL・メモ（`description`）はGoogleから受け取らず、偽のProviderが返しても持たない（2026-10-24、paobub-mvpを最初のHostにする設計の決定）。`fields`を変えたら取得条件の版（`GOOGLE_EVENTS_QUERY.version`）を上げ、前の基点を流用しない。
 - 同期の対象はconnection・calendar・取得条件・固定した期間で束縛する（`googleCalendarScope`）。初回は`timeMin` / `timeMax`で期間を指定して全件を取り、以後は`syncToken`だけで差分を取る。`singleEvents`と`maxResults`は初回と同じ値で送る。
 - 基点は`syncToken`と取得した時刻を一つの記録にし、`SyncStateStore`には不透明な文字列として保管する。全ページを適用してから`commit`で公開し、途中で止まれば公開済みの世代のまま残る。
 - 410は基点の失効として、そのscopeだけを`invalidate`して全件を取り直す。作り直しが終わるまで読取は`complete: false`になる。台帳には触れない。

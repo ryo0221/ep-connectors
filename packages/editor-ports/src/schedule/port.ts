@@ -66,7 +66,10 @@ export interface OverlayRead {
   complete: boolean;
   /** Ranges that were not read. They are unknown, not free. */
   missing: OverlayRange[];
-  fetchedAt: number;
+  /** When the shown copy was read. null: never read yet (before the first read, or while rebuilding
+   * after the Host lost its copy); then complete is false, missing is the whole range and events is
+   * empty. */
+  fetchedAt: number | null;
   events: OverlayEvent[];
 }
 export interface OverlayNotice {

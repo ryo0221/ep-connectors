@@ -63,7 +63,7 @@ Tokenを使う処理をcallbackとして渡す形にはしない。差し口の�
 
 Adapterがmethod・URL・header・bodyを組み立てるため、送信先のhost名だけを許可しても、想定外のendpointやredirect先へ接続の権限を使われる余地が残る。Hostの`send`の実装は、次をすべて満たすことを必須の契約とする。Adapterの申告を信じるのではなく、Hostの側で検査する。
 
-- **操作の目録で許可する。** Adapterは、Providerごとに使う操作の目録（操作名、method、許可するorigin、pathの型、必要なscope）を静的に宣言する。GraphQLのように一つのendpointで内容が変わる操作は、固定したdocumentのhashと変数の型を目録に載せる（[GitHub接続の設計の2](github/README.md#2-認証)）。Hostは要求の操作名を目録と照合し、method・origin（scheme・host・portの完全一致）・pathが目録の型に合わない要求を送らない。目録はconnectionのscopeとも照合し、接続の同意にない操作を拒否する。
+- **操作の目録で許可する。** Adapterは、Providerごとに使う操作の目録（操作名、method、許可するorigin、pathの型、必要なscope）を静的に宣言する。GraphQLのように一つのendpointで内容が変わる操作は、固定したdocumentのhashと変数の型を目録に載せる（[GitHub接続の設計の2](github/README.md#2-認証)）。Hostは要求の操作名を目録と照合し、method・origin（scheme・host・portの完全一致）・pathが目録の型に合わない要求を送らない。Queryは目録に載せた名前だけを許し、`fixedQuery`に載せた名前は宣言した値でちょうど一つ付いた要求だけを送る（Googleの`fields`で受け取るfieldを固定するなど）。目録はconnectionのscopeとも照合し、接続の同意にない操作を拒否する。
 - **資源ごとの閲覧を認可する。** 一つのtokenが複数のprojectの資源に届く接続（GitHub Appのinstallationなど）では、tokenが届くことを閲覧の認可として扱わない。目録は操作ごとに、要求が触れる資源をpathの値、GraphQLの変数、またはちょうど一つ指定されたqueryの値から取り出す規則（`resources`）を持つ。Google Sheetsのように一つのOAuth scopeで利用者の読めるすべてのspreadsheetに届く接続も同じ扱いとする。Hostは取り出した資源（`ResourceRef`）を`HostPolicy.authorizeResources(key, resources)`でprincipal・projectごとに認可し、拒否されたら送らない。資源を取り出せない要求も送らない。Cacheから表示する側も同じ判定を呼ぶ。
 - **認証付きのredirectを辿らない。** Hostは認証付き要求の3xxを自動で辿らず、tokenを付けずに応答としてadapterへ返す。Adapterが次の要求として送り直す場合も、新しいURLを同じ目録の検査に通す。別originへの付け替えでtokenを送ることはない。Providerが仕様として別originへ誘導する操作（署名付きのダウンロードURLなど）は、目録で「認証なし」として宣言し、`HttpTransport`の側で扱う。
 - **認証に関わるheaderをadapterに指定させない。** `Authorization`、`Cookie`、`Proxy-Authorization`、およびProviderが認証に使うheaderを要求に含めた場合は、上書きせずに要求ごと拒否する。Hostが付けるのは認証のheaderだけで、他のheaderは目録で許可したものに限る。

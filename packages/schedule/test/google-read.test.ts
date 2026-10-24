@@ -23,6 +23,7 @@ import {
   enqueueReadsForSignal,
   GOOGLE_CALENDAR_CATALOG,
   GOOGLE_CALENDAR_EVENTS_READ_SCOPE,
+  GOOGLE_EVENTS_FIELDS,
   googleCalendarReadJobHandler,
   googleCalendarScope,
   readGoogleCalendarRange,
@@ -540,7 +541,32 @@ describe('Google Calendar read over the shared ports', () => {
       start: Date.parse('2026-11-03T00:00:00Z'),
       title: 'Off<b>day</b>',
     });
-    expect([...(event?.notes ?? '')]).toHaveLength(2001);
+  });
+
+  it('asks Google only for the fields the read uses, and never keeps notes, attendees or links', async () => {
+    const t = setup();
+    const private_ = {
+      ...timed('private', 3, 'Review'),
+      description: 'Dial in: https://meet.example/abc, alice@example.com',
+      attendees: [{ email: 'alice@example.com' }],
+      hangoutLink: 'https://meet.example/abc',
+    };
+    t.google.put(CALENDAR, private_);
+    await syncGoogleCalendar(t.deps(), t.scope);
+    for (const request of t.google.listRequests) {
+      expect(new URL(request.url).searchParams.getAll('fields')).toEqual([GOOGLE_EVENTS_FIELDS]);
+    }
+    // Even when the provider ignores `fields`, the cache and the DTO hold no notes or attendees.
+    const ignoring = setup();
+    ignoring.google.honorFields = false;
+    ignoring.google.put(CALENDAR, private_);
+    await syncGoogleCalendar(ignoring.deps(), ignoring.scope);
+    for (const read of [await t.read(), await ignoring.read()]) {
+      expect(read.events).toHaveLength(1);
+      const [event] = read.events;
+      expect(event).not.toHaveProperty('notes');
+      expect(JSON.stringify(read)).not.toMatch(/alice@example\.com|meet\.example/);
+    }
   });
 
   it.each([
@@ -650,6 +676,7 @@ describe('Google Calendar read over the shared ports', () => {
 
 describe('Google Calendar catalog', () => {
   const base = `https://www.googleapis.com/calendar/v3/calendars/primary/events`;
+  const fields = `fields=${encodeURIComponent(GOOGLE_EVENTS_FIELDS)}`;
   const check = (url: string, method: 'GET' | 'DELETE' = 'GET') =>
     checkCatalogRequest({
       catalog: GOOGLE_CALENDAR_CATALOG,
@@ -659,8 +686,10 @@ describe('Google Calendar catalog', () => {
     });
 
   it.each([
-    ['a full read', `${base}?timeMin=a&timeMax=b&singleEvents=true&maxResults=250`, true],
-    ['a delta read', `${base}?syncToken=s&pageToken=p&singleEvents=true`, true],
+    ['a full read', `${base}?timeMin=a&timeMax=b&singleEvents=true&maxResults=250&${fields}`, true],
+    ['a delta read', `${base}?syncToken=s&pageToken=p&singleEvents=true&${fields}`, true],
+    ['a read without the fixed fields', `${base}?syncToken=s&singleEvents=true`, false],
+    ['a read asking for attendees', `${base}?syncToken=s&fields=items(id,attendees)`, false],
     ['a free-text query', `${base}?q=secret`, false],
     [
       'another calendar path',

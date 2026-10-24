@@ -6,6 +6,9 @@
   "exports": {
     "./schedule": "./src/schedule/index.ts",
     "./schedule/fixtures": "./src/schedule/fixtures.ts",
+    "./geo": "./src/geo/index.ts",
+    "./data": "./src/data/index.ts",
+    "./work-items": "./src/work-items/index.ts",
     "./upstream.json": "./upstream.json"
   }
 }

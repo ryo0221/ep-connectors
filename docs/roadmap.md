@@ -16,18 +16,18 @@
 
 R1で読取に要る差し口を四分野で固める。GitHubは、差分の基点（sync token）がなくETagと定期的な照合で同期する点と、Webhookに署名があり再配送される点が他と違うため、`SyncStateStore`と`WebhookIntake`がScheduleだけに合わせた形になっていないかを確かめるのに役立つ。台帳はW1まで型だけにとどめる。キューは、再取得・rate limitの待機・購読の更新のためR1から使い、外部作用のstepのjobはW1で加える。ScheduleのD2はR1とR2に、D3はW1に当たる。
 
-R1では、EditorPlatform側のHost portがまだない分野（Data・Geo・GitHub）について、本リポジトリの中で読取のDTOを決めて縦断試験をする。EditorPlatformのEditorへつなぐのは、そのHost portと契約が決まってからにする。
+R1では、Data・Geo・GitHubについて、本リポジトリの中で読取のDTOを決めて縦断試験をした。EditorPlatformは2026-10-24に、この三分野の読取専用のHost port（`GeoFeatureReadPort`・`TableReadPort`・`WorkItemReadPort`）と決定的なmock Hostを足した（[ADR 016](https://github.com/ryo0221/editor-platform/blob/main/docs/decisions/016-external-connections-reference-host.md)、[読取契約](https://github.com/ryo0221/editor-platform/blob/main/docs/external-sources/editor-host-contract.md)）。写しは`@ep-connectors/editor-ports/geo`・`/data`・`/work-items`にある。EditorPlatformのPlaygroundは全分野で検証用の参照Hostであり、本リポジトリをimportしない。実接続は本リポジトリを取り込む本物のHost（最初の候補はpaobub）が、読取の結果をこれらのportの形に包んで見せる。
 
 ## 2. 分野の候補
 
 設計前の候補である。
 
-| 分野     | 想定する接続先                                                                                                           | EditorPlatform側の現状                                                                                                                                                              |
-| -------- | ------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `data`   | DB、Google Sheets / Excel オンライン                                                                                     | Structured Dataは手元のデータだけを扱う。外部の参照元のportは未定義                                                                                                                 |
-| `map`    | 地理データのvector feature読取（OGC API Featuresなど。領域での検索、ページング、出典、CRS）。背景タイル、住所検索        | Geoは手元のCSV / GeoJSON（CRS84）の取り込みだけ。背景は同梱データだけで外部APIとタイルを使わない契約（`docs/geo-background-contract.md`）。タイルと住所検索には契約の変更が先に要る |
-| `files`  | Google Drive / OneDrive / SharePoint                                                                                     | Document・Slide・Officeの取り込みと書き出しは手元のファイルだけ                                                                                                                     |
-| `github` | GitHubのIssue / Pull Request、Projects、リポジトリのファイル、レビューのコメント。設計は[docs/github/](github/README.md) | Structured Dataは手元のデータだけ、Documentの取り込みは手元のファイルだけ。GitHubのportは未定義                                                                                     |
+| 分野     | 想定する接続先                                                                                                           | EditorPlatform側の現状                                                                                                                                                                                                                              |
+| -------- | ------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `data`   | DB、Google Sheets / Excel オンライン                                                                                     | Structured Dataの読取専用のport `TableReadPort`とmock Hostがある（Surfaceへの組み込みは未）                                                                                                                                                         |
+| `map`    | 地理データのvector feature読取（OGC API Featuresなど。領域での検索、ページング、出典、CRS）。背景タイル、住所検索        | Geoは手元のCSV / GeoJSON（CRS84）の取り込みと、外部の地物の読取専用のport `GeoFeatureReadPort`（mock Hostだけ）。背景は同梱データだけで外部APIとタイルを使わない契約（`docs/geo-background-contract.md`）。タイルと住所検索には契約の変更が先に要る |
+| `files`  | Google Drive / OneDrive / SharePoint                                                                                     | Document・Slide・Officeの取り込みと書き出しは手元のファイルだけ                                                                                                                                                                                     |
+| `github` | GitHubのIssue / Pull Request、Projects、リポジトリのファイル、レビューのコメント。設計は[docs/github/](github/README.md) | Issue / Pull Requestの一覧は読取専用のport `WorkItemReadPort`とmock Hostがある。Documentの取り込みは手元のファイルだけ                                                                                                                              |
 
 Geoのvector feature読取は、領域（bbox）での検索、ページングの基点、出典と利用条件、CRSを読取のDTOに含める。CRSを黙って変換せず、EditorPlatformのGeoが扱えないCRSは理由付きで拒否する。
 

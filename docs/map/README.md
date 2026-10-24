@@ -11,7 +11,7 @@
 | 取得した地物の写しを`SyncStateStore`へ一つの世代として公開すること、`read`のjobでの取り直し | CRSの変換。CRS84以外は理由付きで拒否する                                  |
 | 認証の要らない配備（`HttpTransport`）と、要る配備（`TokenStore.send`）の両方                | 配備の発見（landing pageやconformanceを読んで目録を作ること）。目録は静的 |
 
-EditorPlatformの側にGeoの外部の参照元のHost portはまだない（[段階と分野の2](../roadmap.md#2-分野の候補)）。R1では本リポジトリの中で読取のDTOを決め、偽の配備で縦断試験をする。
+EditorPlatformのGeoの外部の地物のHost portは`GeoFeatureReadPort`である（[読取契約](https://github.com/ryo0221/editor-platform/blob/main/docs/external-sources/editor-host-contract.md)、写しは`@ep-connectors/editor-ports/geo`）。座標はCRS84の二次元だけで、三次元の座標と`GeometryCollection`はHostが`unsupported-geometry`として返す。本リポジトリの`GeoFeature`をこの形に包むのはHostの役目である。
 
 ## 2. 前提とする事実（要確認）
 
@@ -80,7 +80,7 @@ Hostは配備ごとに`OgcFeaturesSource`（Provider名、origin、landing page�
 ## 8. 決めていないこと
 
 - R2の実接続の結果（9.4）と、それを受けた配備の確定。
-- EditorPlatformのGeoへつなぐHost portと、写しの大きさの上限。
+- 写しの大きさの上限（EditorPlatformが一回に求める件数は`geoFeatureReadLimit`の400）と、三次元の座標を落として渡すか拒否するか。
 - 6個の数の`bbox`（高さ）、CRS84h、Part 2の`bbox-crs`を受けるか。
 - Offsetのpagingで取得中にデータが変わる場合に、`numberMatched`との食い違いを利用者へどう示すか。
 

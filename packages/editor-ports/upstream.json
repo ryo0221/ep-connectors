@@ -1,7 +1,7 @@
 {
   "repository": "https://github.com/ryo0221/editor-platform",
-  "commit": "67026604cfe22f35538d8f193b2f313609cdf8c6",
-  "copiedOn": "2026-10-23",
+  "commit": "03dc4d4ce48b4ade2ff879ce56062cc70a05108d",
+  "copiedOn": "2026-10-24",
   "contract": "docs/schedule/editor-host-contract.md",
   "copies": [
     {
@@ -19,7 +19,7 @@
         },
         {
           "path": "packages/schedule/src/host.ts",
-          "lastChanged": "473a230b0c6e263a1e3cd7c1ea8be9c7441ef1d2",
+          "lastChanged": "57a266a6bdd094005a5bd9987facfee7da37eb7d",
           "symbols": [
             "ScheduleSourceInfo",
             "OverlayEvent",
@@ -33,6 +33,65 @@
             "OperationStep",
             "OperationStatus",
             "ScheduleEffectPort"
+          ]
+        }
+      ]
+    },
+    {
+      "target": "src/geo/port.ts",
+      "contract": "docs/external-sources/editor-host-contract.md",
+      "sources": [
+        {
+          "path": "packages/geo-core/src/model.ts",
+          "lastChanged": "4b40c344a6041bb072d075a8c6ad987dfa1248e2",
+          "symbols": ["Scalar", "Position", "Geometry"]
+        },
+        {
+          "path": "packages/geo-core/src/host.ts",
+          "lastChanged": "8a2807c8f9e17f1b55df70c60f5f6cf870117e04",
+          "symbols": [
+            "GeoBbox",
+            "GeoFeatureSourceInfo",
+            "GeoExternalFeature",
+            "GeoFeatureRejection",
+            "GeoFeatureRead",
+            "GeoSourceNotice",
+            "GeoFeatureReadPort",
+            "geoFeatureReadLimit"
+          ]
+        }
+      ]
+    },
+    {
+      "target": "src/data/port.ts",
+      "contract": "docs/external-sources/editor-host-contract.md",
+      "sources": [
+        {
+          "path": "packages/structured-data/src/host.ts",
+          "lastChanged": "f2af9e502ce158ac93e96c786262f3d7ab3cdf8f",
+          "symbols": [
+            "ExternalSourceNotice",
+            "ExternalCellValue",
+            "TableSourceInfo",
+            "TableRead",
+            "TableReadPort"
+          ]
+        }
+      ]
+    },
+    {
+      "target": "src/work-items/port.ts",
+      "contract": "docs/external-sources/editor-host-contract.md",
+      "sources": [
+        {
+          "path": "packages/structured-data/src/host.ts",
+          "lastChanged": "f2af9e502ce158ac93e96c786262f3d7ab3cdf8f",
+          "symbols": [
+            "ExternalSourceNotice",
+            "WorkItemSourceInfo",
+            "WorkItem",
+            "WorkItemsRead",
+            "WorkItemReadPort"
           ]
         }
       ]
