@@ -48,7 +48,7 @@ Hostは配備ごとに`OgcFeaturesSource`（Provider名、origin、landing page�
 7. `next` linkはGeoJSONのもの（HTMLの`next`は選ばない）を選び、次をすべて満たすときだけ`next`として返す：同じorigin、同じcollectionのitemsのpath、`bbox`が数として同じ、宣言したparameterだけを持つ、固定のqueryは宣言と同じ値、`limit`が範囲内。領域を外した全件の取得や、別のcollectionへの付け替えを止めるためである。
 8. 出典として、Provider名、origin、collection、取得時刻（`Clock`）、配備の`timeStamp`、応答の`license`・`describedby`のlinkを返す。
 
-`describeCollection`は題名、宣言された範囲、返せるCRS（Part 2の宣言がなければCRS84だけ）、`attribution`、`license`のlinkを返す。利用条件をどう表示し、どこまで使ってよいかの判断は、R2の前に分野ごとに決める（[段階と分野の1](../roadmap.md#1-順番)）。
+`describeCollection`は題名、宣言された範囲、返せるCRS（Part 2の宣言がなければCRS84だけ）、`attribution`、`license`のlinkを返す。`itemType`が`feature`以外（tileなど）のcollectionは、itemsを読まずに`unsupported-item-type`として拒否する。利用条件をどう表示し、どこまで使ってよいかの判断は、R2の前に分野ごとに決める（[段階と分野の1](../roadmap.md#1-順番)）。
 
 ## 5. 写しと再取得
 
@@ -92,11 +92,13 @@ R1の偽の配備での成功を実配備の保証とみなさず、認証のな
 
 | 項目           | 内容                                                                                                                                                        |
 | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 配備           | OGC CITE向けのpygeoapiのデモ `https://demo.pygeoapi.io/cite`                                                                                                |
-| collection     | `lakes`（Large Lakes）                                                                                                                                      |
-| 配備の利用条件 | デモのトップにCC-BY 4.0の掲示がある（issue #11の記載。実行時にlanding pageで確かめ直す）。安定性・rate limitの保証はない                                    |
-| データの出典   | collectionの説明に世界の湖のpublic domainのデータと記載（同上）。`describeCollection`の`attribution`・`license`のlinkを結果に残す                           |
+| 配備           | pygeoapiのデモ（GitHubの最新版） `https://demo.pygeoapi.io/master`                                                                                          |
+| collection     | `lakes`（Large Lakes、`itemType: feature`、CRS84）                                                                                                          |
+| 配備の利用条件 | デモのトップ（`https://demo.pygeoapi.io/`）と`/master`のHTMLのlanding pageにCC-BY 4.0の掲示がある（2026-10-24に確認）。安定性・rate limitの保証はない       |
+| データの出典   | collectionの説明は「lakes of the world, public domain」、`canonical`のlinkはNatural Earth。`license`のlinkと`attribution`はない                             |
 | 要求の大きさ   | 五大湖の周辺 `bbox=-93,41,-76,49.5`、`limit=2`、最大10ページ。collectionの説明が1回、最初のページが1回、写しの全ページで、合わせて十数回以下の`GET`に収める |
+
+当初はOGC CITE向けの`https://demo.pygeoapi.io/cite`を選んでいたが、2026-10-24の実行で、そこの`lakes`は`itemType: tile`として公開され、`/cite/collections/lakes/items`は`bbox`・`limit`の有無に関わらず400（`{"code":"NoApplicableCode","description":"Invalid provider type"}`）を返した。同じデモの`/master`の`lakes`はfeatureとして読めるため、こちらへ替えた。この失敗を不透明な400で終えないよう、`describeCollection`で`itemType`を検査するようにした（4節の最後）。
 
 配備の利用条件（API）とデータの出典は分けて記録し、表示には両方の帰属を付ける。デモが使えないときは、別の公的なデモか、明示的に許可したローカルの配備を選び、理由をここに残す。
 
@@ -120,13 +122,54 @@ HTTPS proxyの後ろ（Claude Codeのクラウド環境など）では、Nodeの
 - 試験は[`pygeoapi-cite.live.test.ts`](../../packages/map/src/ogc-features/pygeoapi-cite.live.test.ts)。`npm run check`と通常のCIは`*.live.test.ts`を含めず、networkもsecretも要らない。Actionsの予算にも依存しない。
 - 送信は`@ep-connectors/live`の`FetchHttpTransport`が行う。目録の検査を通った要求だけを送り、redirectを辿らず（`redirect: 'manual'`）、cookieを送らず、30秒と5 MiBの上限を置く。`user-agent`に本issueのURLを入れる。
 - 確かめること：CRS84の宣言、最初のページの形（Polygon / MultiPolygon、`limit`以下）と出典、外から戻った基点（領域を外したもの）を送る前に拒否すること、全ページを一つの世代として公開し、`stored + rejected = numberMatched`であること。
-- 出力は日時、endpoint、collection、出典とlicense、件数、ページ数、拒否の位置と理由、送った要求のpathとqueryだけのJSON。実応答の本体は残さない。
+- 出力（`--reporter=verbose`で表示される）は日時、endpoint、collection、出典とlicense、件数、ページ数、拒否の位置と理由、送った要求のpathとqueryだけのJSON。実応答の本体は残さない。
 - 不正なCRS、別origin・別collection・未宣言のquery・別形式の`next`、redirect、ページ数の上限は、実配備へ壊れた要求を送らず、偽の配備の試験（`read.test.ts`・`sync.test.ts`）で確かめる。
 
 ### 9.4 結果
 
-| 日時   | 環境 | 結果                                                                                                                                                                         |
-| ------ | ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 未実行 | —    | 2026-10-24の開発環境は送信先の許可がなく`demo.pygeoapi.io`へ接続できなかった（`transport`の失敗で止まることは確認した）。許可された環境で9.3を実行し、出力のJSONをここへ写す |
+| 日時（UTC）        | 環境                                                     | 結果                                                                                                                                                                         |
+| ------------------ | -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-10-24（前半） | Claude Codeのクラウド環境（送信先の許可なし）            | `demo.pygeoapi.io`へ接続できず、`transport`の失敗で止まった                                                                                                                  |
+| 2026-10-24 03:31   | 同上（`demo.pygeoapi.io`を許可、`NODE_USE_ENV_PROXY=1`） | `/cite`：`describeCollection`は通ったが、最初のページが`{"kind":"http","status":400}`。原因は9.1のとおり`lakes`がtileであること                                              |
+| 2026-10-24 03:32   | 同上                                                     | `/master`：合格。CRS84、最初のページ2件（`numberMatched` 5、`next`あり）、写しは3ページで5件を一つの世代（1）として公開、`rejected`なし、`stored + rejected = numberMatched` |
 
-残る`unverified`：配備の実際のcollectionの説明・出典の文言、pagingが複数ページで起きるか、応答の`Content-Type`、rate limit。結果が出るまで、R2のGeoは合格としない。
+`/master`での出力（応答の本体は含まない）：
+
+```json
+{
+  "at": "2026-10-24T03:32:56.387Z",
+  "endpoint": "https://demo.pygeoapi.io/master",
+  "collection": {
+    "id": "lakes",
+    "title": "Large Lakes",
+    "attribution": null,
+    "licenses": [],
+    "crs": ["http://www.opengis.net/def/crs/OGC/1.3/CRS84"],
+    "extent": [-180, -90, 180, 90]
+  },
+  "query": { "collectionId": "lakes", "bbox": [-93, 41, -76, 49.5], "limit": 2 },
+  "firstPage": {
+    "returned": 2,
+    "numberMatched": 5,
+    "timeStamp": "2026-10-24T03:32:55.706834Z",
+    "hasNext": true,
+    "sourceLinks": []
+  },
+  "sync": { "pages": 3, "stored": 5, "numberMatched": 5, "rejected": [], "generation": 1 },
+  "requests": [
+    "features.collection /master/collections/lakes?f=json",
+    "features.items /master/collections/lakes/items?f=json&bbox=-93%2C41%2C-76%2C49.5&limit=2",
+    "features.items /master/collections/lakes/items?f=json&bbox=-93%2C41%2C-76%2C49.5&limit=2",
+    "features.items /master/collections/lakes/items?f=json&offset=2&bbox=-93%2C41%2C-76%2C49.5&limit=2",
+    "features.items /master/collections/lakes/items?f=json&offset=4&bbox=-93%2C41%2C-76%2C49.5&limit=2"
+  ]
+}
+```
+
+分かったこと：
+
+- Pagingは複数ページで起き、`next`の`f=json`と`offset`は9.2の変更のとおり辿れた。`numberMatched`が割り切れないため、空の最後のページは読まなかった。外から戻った基点（領域を外したもの）は送る前に拒否した。
+- 応答は`Content-Type: application/json`、`Content-Crs: <http://www.opengis.net/def/crs/OGC/1.3/CRS84>`（同日にcurlで確認）。
+- itemsの応答にも`license`・`describedby`のlinkはなく、出典のlinkは空。表示に要る帰属は、配備のCC-BY 4.0と、collectionの説明・`canonical`（Natural Earth）から取る必要がある。今の`describeCollection`は`canonical`も説明文の利用条件も返さない。
+
+残る`unverified`：rate limit（今回の5回の`GET`では制限の見出しなし）、デモの`/master`は最新版を動かすため挙動が変わり得ること。

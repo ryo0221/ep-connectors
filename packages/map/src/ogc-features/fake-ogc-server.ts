@@ -19,6 +19,8 @@ export interface FakeCollection {
   attribution?: string;
   license?: string;
   crs?: string[];
+  /** collection の説明の `itemType`。省略すると付けない。 */
+  itemType?: string;
   extent?: [number, number, number, number];
   features: FakeFeature[];
 }
@@ -67,6 +69,7 @@ export function fakeOgcServer(provider: FakeProvider, options: FakeOgcOptions): 
       ...(collection.title === undefined ? {} : { title: collection.title }),
       ...(collection.attribution === undefined ? {} : { attribution: collection.attribution }),
       ...(collection.crs === undefined ? {} : { crs: collection.crs }),
+      ...(collection.itemType === undefined ? {} : { itemType: collection.itemType }),
       ...(collection.extent === undefined
         ? {}
         : { extent: { spatial: { bbox: [collection.extent], crs: CRS84 } } }),

@@ -103,6 +103,8 @@ export type FeatureReadError =
   | { kind: 'http'; status: number }
   /** CRS84 以外の座標が返った。変換せずに拒否する。 */
   | { kind: 'unsupported-crs'; crs: string }
+  /** collection が vector feature ではない（`itemType` が `feature` 以外）。items を読まずに止める。 */
+  | { kind: 'unsupported-item-type'; itemType: string }
   | { kind: 'invalid-response'; reason: string };
 
 export type FeatureReadResult<T> = { ok: true; value: T } | { ok: false; error: FeatureReadError };
@@ -222,6 +224,12 @@ export async function describeCollection(
   if (!response.ok) return response;
   const body = parseJson(response.value);
   if (!isRecord(body)) return fail({ kind: 'invalid-response', reason: 'not a collection' });
+  // `itemType` の既定は `feature`（OGC API Features Part 1）。tile や record の collection は
+  // items が 400 などの不透明な失敗になるため、説明の段で拒否する。
+  if (body.itemType !== undefined && body.itemType !== 'feature') {
+    const itemType = typeof body.itemType === 'string' ? plainText(body.itemType) : 'invalid';
+    return fail({ kind: 'unsupported-item-type', itemType });
+  }
 
   const declared = Array.isArray(body.crs)
     ? body.crs.filter((value): value is string => typeof value === 'string').map(plainText)

@@ -410,6 +410,18 @@ describe('describeCollection', () => {
     expect(result.ok && result.value.supportsCrs84).toBe(false);
   });
 
+  it('accepts itemType feature and rejects other item types before reading items', async () => {
+    const feature = publicSetup({ collections: [{ ...stations(), itemType: 'feature' }] });
+    expect((await describeCollection(feature.reader, 'stations')).ok).toBe(true);
+
+    // pygeoapi の /cite の lakes は tile として公開され、items は 400 を返す（docs/map 9.4）。
+    const tile = publicSetup({ collections: [{ ...stations(), itemType: 'tile' }] });
+    expect(await describeCollection(tile.reader, 'stations')).toEqual({
+      ok: false,
+      error: { kind: 'unsupported-item-type', itemType: 'tile' },
+    });
+  });
+
   it('returns not found as an http error', async () => {
     const setup = publicSetup();
     expect(await describeCollection(setup.reader, 'missing')).toEqual({

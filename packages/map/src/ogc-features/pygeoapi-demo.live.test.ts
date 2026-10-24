@@ -8,15 +8,16 @@ import type { FeatureQuery, OgcFeaturesReader } from './read.js';
 import { describeCollection, readFeaturesPage, transportSender } from './read.js';
 import { featuresScope, syncFeatures } from './sync.js';
 
-// R2 の Geo の実接続（issue #11）。OGC CITE 向けの pygeoapi のデモ配備へ、読取だけの小さな要求を
-// 送る。`npm run test:live` でだけ動き、通常の試験・CI では動かさない。secret は使わない。
+// R2 の Geo の実接続（issue #11）。pygeoapi のデモ配備（/master）へ、読取だけの小さな要求を
+// 送る。/cite の lakes は tile として公開され items が 400 になるため使わない（docs/map 9.1）。
+// `npm run test:live` でだけ動き、通常の試験・CI では動かさない。secret は使わない。
 // 配備の利用条件と安定性は保証されない。使えなければ docs/map/README.md の 9 節に理由を残す。
 
 /** Host の信頼できる静的な設定。応答の link から送信先を増やさない。 */
 const SOURCE: OgcFeaturesSource = {
-  provider: 'ogc-features:pygeoapi-cite',
+  provider: 'ogc-features:pygeoapi-demo',
   origin: 'https://demo.pygeoapi.io',
-  basePath: '/cite',
+  basePath: '/master',
   auth: 'none',
   // pygeoapi は offset で paging し、`next` link に要求の形式（`f=json`）を残す。
   pagingParameters: ['offset'],
@@ -32,7 +33,7 @@ const CONNECTION: ConnectionKey = {
   provider: SOURCE.provider,
   tenant: 'public',
   account: 'anonymous',
-  connection: 'pygeoapi-cite',
+  connection: 'pygeoapi-demo',
   generation: 1,
 };
 
@@ -60,7 +61,7 @@ function countingReader(): { reader: OgcFeaturesReader; sent: string[] } {
   };
 }
 
-describe('pygeoapi CITE demo (live, read-only)', () => {
+describe('pygeoapi demo (live, read-only)', () => {
   it('describes the collection, pages through a small bbox and publishes one generation', async () => {
     const { reader, sent } = countingReader();
 
@@ -87,7 +88,7 @@ describe('pygeoapi CITE demo (live, read-only)', () => {
     const forged = await readFeaturesPage(
       reader,
       QUERY,
-      `${SOURCE.origin}/cite/collections/lakes/items?f=json&bbox=-180,-90,180,90&offset=0`,
+      `${SOURCE.origin}${SOURCE.basePath}/collections/lakes/items?f=json&bbox=-180,-90,180,90&offset=0`,
     );
     expect(forged).toEqual({ ok: false, error: { kind: 'invalid-cursor', reason: 'bbox' } });
     expect(sent).toHaveLength(before);
