@@ -233,6 +233,33 @@ describe('readFeaturesPage', () => {
     );
   });
 
+  it('sends and keeps the fixed query the deployment needs, as pygeoapi does', async () => {
+    const source = { ...PUBLIC_SOURCE, pagingParameters: ['offset'], fixedQuery: { f: 'json' } };
+    const setup = publicSetup({ fixedQuery: { f: 'json' } }, source);
+    const pages = await readAll(setup, QUERY);
+    expect(pages.flatMap((page) => page.features)).toHaveLength(25);
+    for (const request of setup.provider.received) {
+      expect(new URL(request.url).searchParams.get('f')).toBe('json');
+    }
+    expect((await describeCollection(setup.reader, 'stations')).ok).toBe(true);
+
+    // 固定の query を宣言していない配備では、`f` を含む `next` を辿らない。
+    const undeclared = publicSetup({ rewriteNext: (href) => `${href}&f=json` });
+    expect(await readFeaturesPage(undeclared.reader, QUERY, null)).toEqual({
+      ok: false,
+      error: { kind: 'next-link', reason: 'query' },
+    });
+    // 宣言した値と違う形式へは移らない。
+    const html = publicSetup(
+      { fixedQuery: { f: 'json' }, rewriteNext: (href) => href.replace('f=json', 'f=html') },
+      source,
+    );
+    expect(await readFeaturesPage(html.reader, QUERY, null)).toEqual({
+      ok: false,
+      error: { kind: 'next-link', reason: 'query' },
+    });
+  });
+
   it('reports a next link only offered as HTML as an invalid response', async () => {
     const setup = publicSetup({ nextType: 'text/html' });
     const result = await readFeaturesPage(setup.reader, QUERY, null);

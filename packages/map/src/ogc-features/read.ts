@@ -16,6 +16,7 @@ import {
   DEFAULT_PAGING_PARAMETERS,
   itemsPath,
   OGC_FEATURES_OPERATIONS,
+  withFixedQuery,
 } from './catalog.js';
 
 /** 要求を送る経路。配備の `auth` に合わせて Host が選ぶ。 */
@@ -125,7 +126,10 @@ export async function readFeaturesPage(
 
   let url: string;
   if (cursor === null) {
-    const first = new URL(`${source.origin}${itemsPath(source, query.collectionId)}`);
+    const first = withFixedQuery(
+      source,
+      new URL(`${source.origin}${itemsPath(source, query.collectionId)}`),
+    );
     first.searchParams.set('bbox', query.bbox.join(','));
     first.searchParams.set('limit', String(query.limit));
     url = first.toString();
@@ -204,7 +208,10 @@ export async function describeCollection(
 ): Promise<FeatureReadResult<CollectionDescription>> {
   if (collectionId === '') return fail({ kind: 'invalid-query', reason: 'collection' });
   const { source } = reader;
-  const url = `${source.origin}${collectionPath(source, collectionId)}`;
+  const url = withFixedQuery(
+    source,
+    new URL(`${source.origin}${collectionPath(source, collectionId)}`),
+  ).toString();
   const sent = await reader.send({
     operation: OGC_FEATURES_OPERATIONS.collection,
     method: 'GET',
@@ -259,10 +266,19 @@ export function checkNextLink(
   }
   if (url.pathname !== itemsPath(source, query.collectionId)) return { ok: false, reason: 'path' };
 
-  const allowed = ['bbox', 'limit', ...(source.pagingParameters ?? DEFAULT_PAGING_PARAMETERS)];
+  const paging = ['bbox', 'limit', ...(source.pagingParameters ?? DEFAULT_PAGING_PARAMETERS)];
+  const fixed = source.fixedQuery ?? {};
   const names = [...url.searchParams.keys()];
-  if (names.some((name) => !allowed.includes(name))) return { ok: false, reason: 'query' };
+  if (names.some((name) => !paging.includes(name) && !Object.hasOwn(fixed, name))) {
+    return { ok: false, reason: 'query' };
+  }
   if (new Set(names).size !== names.length) return { ok: false, reason: 'query' };
+  // 固定の query は値も同じものに限る（`f=html` などの別の形式へ移らない）。
+  for (const [name, value] of Object.entries(fixed)) {
+    if (paging.includes(name)) continue;
+    const actual = url.searchParams.get(name);
+    if (actual !== null && actual !== value) return { ok: false, reason: 'query' };
+  }
 
   const bbox = url.searchParams.get('bbox');
   const parsed = bbox === null ? null : checkBbox(bbox.split(',').map(strictNumber));

@@ -43,6 +43,11 @@ export interface FakeOgcOptions {
   /** `next` link に付ける type。既定は GeoJSON。 */
   nextType?: string;
   timeStamp?: string;
+  /**
+   * 受け付ける固定の query（pygeoapi の `f=json` など）。値が違えば 400。受けた値はそのまま
+   * `next` link に残す（pygeoapi 0.24 の `itemtypes.py` と同じ）。
+   */
+  fixedQuery?: Record<string, string>;
 }
 
 const DEFAULT_LIMIT = 10;
@@ -82,8 +87,9 @@ export function fakeOgcServer(provider: FakeProvider, options: FakeOgcOptions): 
     );
     if (!collection) return json(404, { code: 'NotFound' });
     const url = new URL(request.url);
-    for (const name of url.searchParams.keys()) {
-      if (!['bbox', 'limit', 'offset'].includes(name)) {
+    for (const [name, value] of url.searchParams) {
+      const fixed = options.fixedQuery?.[name];
+      if (fixed === undefined ? !['bbox', 'limit', 'offset'].includes(name) : value !== fixed) {
         return json(400, { code: 'InvalidParameterValue', description: name });
       }
     }
