@@ -6,11 +6,11 @@
 
 R1の最初の接続先は表計算とし、Google Sheetsを選んだ（2026-10-23の決定）。Scheduleの最初の候補（Google Calendar）と同じGoogleのOAuthと`TokenStore`の扱いを共有でき、二つ目の分野が同じProviderを使うことで、`@ep-connectors/provider-google`へ切り出す時点を見極められるためである。Excel オンライン（Microsoft Graph）とDBは後に足す。
 
-| 対象                      | 読取（R1）                     | 書込み（W段階以降、候補） | つなぐ先のEditor（Host portは未定義） |
-| ------------------------- | ------------------------------ | ------------------------- | ------------------------------------- |
-| Google Sheetsの値の範囲   | A1表記で指定した一つの範囲の値 | 範囲の値の更新            | Structured Data（読取中心のview）     |
-| Google Sheetsの書式・数式 | 読まない                       | —                         | —                                     |
-| Excel オンライン、DB      | 未着手                         | —                         | Structured Data                       |
+| 対象                      | 読取（R1）                     | 書込み（W段階以降、候補） | つなぐ先のEditor（Host portは`TableReadPort`） |
+| ------------------------- | ------------------------------ | ------------------------- | ---------------------------------------------- |
+| Google Sheetsの値の範囲   | A1表記で指定した一つの範囲の値 | 範囲の値の更新            | Structured Data（読取中心のview）              |
+| Google Sheetsの書式・数式 | 読まない                       | —                         | —                                              |
+| Excel オンライン、DB      | 未着手                         | —                         | Structured Data                                |
 
 ## 2. Google Sheetsの読取
 

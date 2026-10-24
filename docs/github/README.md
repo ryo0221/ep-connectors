@@ -6,12 +6,12 @@
 
 GitHubの対象は、Data・Filesのどちらか一方に収まらない。IssueやPull Requestは表として見ることも、本文をDocumentとして読むことも、レビューのコメントとして扱うこともできる。そのため、Providerごとのsubpathではなく独立した分野のパッケージにする。どの対象も、認証（GitHub App）、Webhook、rate limitを共有する。
 
-| 対象                             | 読取（R段階）                                                                    | 書込み（W段階以降、候補）                                                | つなぐ先のEditor（Host portは未定義）              |
-| -------------------------------- | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------ | -------------------------------------------------- |
-| Issue / Pull Request             | 一覧、状態、label、assignee、milestone、日付。表・Kanban・Timelineの行として読む | Issueの作成、label・状態の変更、コメントの追加                           | Structured Data（読取中心のview）                  |
-| Projects（v2）                   | itemとfield（状態、反復、日付）                                                  | itemのfieldの変更                                                        | Structured Data、Schedule（日付を持つitem）        |
-| リポジトリのファイル             | 指定したbranch / commitのMarkdown・画像・CSVなど                                 | 変更をbranchへcommitし、Pull Requestを作る。既定のbranchへ直接pushしない | Document・Data・Slideの取り込み                    |
-| Pull Requestのレビューとコメント | 差分の行に付いたコメント、レビューの状態                                         | コメントの追加                                                           | Reviewの表示（EditorPlatformの提案レビューとは別） |
+| 対象                             | 読取（R段階）                                                                    | 書込み（W段階以降、候補）                                                | つなぐ先のEditor（一覧のHost portは`WorkItemReadPort`） |
+| -------------------------------- | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------- |
+| Issue / Pull Request             | 一覧、状態、label、assignee、milestone、日付。表・Kanban・Timelineの行として読む | Issueの作成、label・状態の変更、コメントの追加                           | Structured Data（読取中心のview）                       |
+| Projects（v2）                   | itemとfield（状態、反復、日付）                                                  | itemのfieldの変更                                                        | Structured Data、Schedule（日付を持つitem）             |
+| リポジトリのファイル             | 指定したbranch / commitのMarkdown・画像・CSVなど                                 | 変更をbranchへcommitし、Pull Requestを作る。既定のbranchへ直接pushしない | Document・Data・Slideの取り込み                         |
+| Pull Requestのレビューとコメント | 差分の行に付いたコメント、レビューの状態                                         | コメントの追加                                                           | Reviewの表示（EditorPlatformの提案レビューとは別）      |
 
 ### 1.1 版と出典
 
@@ -102,5 +102,5 @@ Scheduleと同じく、外部に結果が残る操作は`OperationLedger`で計�
 - 最初に読む対象は、R1でIssue / Pull Requestの一覧とした。リポジトリのファイルは未定。
 - 2.1の認可の根拠として、Hostの対応表と本人の代理tokenのどちらを既定にするか。
 - GitHub.comだけか、GitHub Enterprise Serverも対象にするか。
-- EditorPlatform側のHost port（Data・Document・Reviewのどれから定義するか）。
+- Issue / Pull Requestの一覧は、EditorPlatformのStructured Dataの`WorkItemReadPort`とした（[読取契約](https://github.com/ryo0221/editor-platform/blob/main/docs/external-sources/editor-host-contract.md)）。Document・Reviewのportは未定。
 - 書込みを利用者本人の代理にするか、Appとして行うか。
