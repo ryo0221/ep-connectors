@@ -51,6 +51,8 @@ GitHubでは次を試験する（[GitHub接続の設計](github/README.md)、`pa
 - 公開HTTPSでのWebhook受信と購読の更新。
 - Zoom createの結果が不明なときの照合（G-ZOOM-RECOVERY）。
 
+実接続の試験は`*.live.test.ts`に置き、`npm run test:live`（`vitest.live.config.ts`）でだけ動かす。通常の`npm test`と公開CIは含めない。最初の例はGeoの公開の配備への読取（[Geo設計の9](map/README.md#9-r2公開の配備への実接続issue-11)）。
+
 結果には、API版・endpoint・アカウントの種類・日付を残す。結果が出るまで、その保証に依存する操作は能力宣言で`unverified`のままにし、有効にしない。資格情報と実在の個人情報は試験の記録へ残さない。
 
 ## 4. EditorPlatformとの適合

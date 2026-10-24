@@ -66,7 +66,10 @@ export interface Setup {
   clock: FixedClock;
 }
 
-export function publicSetup(options: Partial<FakeOgcOptions> = {}): Setup {
+export function publicSetup(
+  options: Partial<FakeOgcOptions> = {},
+  source: OgcFeaturesSource = PUBLIC_SOURCE,
+): Setup {
   const provider = new FakeProvider();
   fakeOgcServer(provider, {
     origin: ORIGIN,
@@ -75,13 +78,13 @@ export function publicSetup(options: Partial<FakeOgcOptions> = {}): Setup {
     ...options,
   });
   const transport = new MemoryHttpTransport({
-    catalog: ogcFeaturesCatalog(PUBLIC_SOURCE),
+    catalog: ogcFeaturesCatalog(source),
     transport: provider.transport,
   });
   const clock = new FixedClock('2026-10-23T00:00:00.000Z');
   return {
     provider,
-    reader: { source: PUBLIC_SOURCE, send: transportSender(transport), clock },
+    reader: { source, send: transportSender(transport), clock },
     clock,
   };
 }

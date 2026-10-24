@@ -20,6 +20,11 @@ export interface OgcFeaturesSource {
    * Host が配備に合わせて宣言する。載っていない parameter を含む `next` link は辿らない。
    */
   pagingParameters?: readonly string[];
+  /**
+   * 配備が応答の形式を決めるために要る固定の query（pygeoapi の `f=json` など）。全ての要求に付け、
+   * `next` link に現れたときは同じ値に限って辿り、落としていれば付け直す。`bbox`・`limit`・paging の parameter と重ねない。
+   */
+  fixedQuery?: Readonly<Record<string, string>>;
 }
 
 export const DEFAULT_PAGING_PARAMETERS: readonly string[] = ['offset', 'startIndex', 'startindex'];
@@ -40,10 +45,19 @@ export function itemsPath(source: OgcFeaturesSource, collectionId: string): stri
   return `${collectionPath(source, collectionId)}/items`;
 }
 
+/** 配備が要る固定の query を `url` に付ける。 */
+export function withFixedQuery(source: OgcFeaturesSource, url: URL): URL {
+  for (const [name, value] of Object.entries(source.fixedQuery ?? {})) {
+    url.searchParams.set(name, value);
+  }
+  return url;
+}
+
 /** 配備の操作の目録（全体設計 3.2.1）。読取の二つの操作だけを載せる。 */
 export function ogcFeaturesCatalog(source: OgcFeaturesSource): OperationCatalog {
   const scopes = source.auth === 'token' ? [...(source.scopes ?? [])] : [];
   const paging = source.pagingParameters ?? DEFAULT_PAGING_PARAMETERS;
+  const fixed = Object.keys(source.fixedQuery ?? {});
   return {
     provider: source.provider,
     operations: [
@@ -52,6 +66,7 @@ export function ogcFeaturesCatalog(source: OgcFeaturesSource): OperationCatalog 
         method: 'GET',
         origin: source.origin,
         path: `${source.basePath}/collections/{collectionId}`,
+        ...(fixed.length > 0 ? { query: fixed } : {}),
         headers: ['accept'],
         scopes,
         auth: source.auth,
@@ -61,7 +76,11 @@ export function ogcFeaturesCatalog(source: OgcFeaturesSource): OperationCatalog 
         method: 'GET',
         origin: source.origin,
         path: `${source.basePath}/collections/{collectionId}/items`,
-        query: [...ITEMS_QUERY, ...paging.filter((name) => !ITEMS_QUERY.includes(name))],
+        query: [
+          ...ITEMS_QUERY,
+          ...paging.filter((name) => !ITEMS_QUERY.includes(name)),
+          ...fixed.filter((name) => !ITEMS_QUERY.includes(name) && !paging.includes(name)),
+        ],
         headers: ['accept'],
         scopes,
         auth: source.auth,
